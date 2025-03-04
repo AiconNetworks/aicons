@@ -1,0 +1,32 @@
+# Ignore all files in the .git directory
+.git/*
+
+# Python
+__pycache__/
+*.py[cod]
+.Python
+*.so
+
+# Virtual Environments
+.venv/
+venv/
+ENV/
+
+# Poetry
+poetry.lock
+dist/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+
+.pytest_cache/
+
+.mypy_cache/
+
+.env

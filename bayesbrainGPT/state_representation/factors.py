@@ -3,27 +3,16 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict
 import numpy as np
 
-class Factor(ABC):
-    """
-    A generic abstract factor.
-    Each factor has a name, a value, and a description.
-    """
-    def __init__(self, name: str, value: Any = None, description: str = ""):
+class BaseFactor:
+    def __init__(self, name, value=None, description=""):
         self.name = name
         self.value = value
         self.description = description
 
-    @abstractmethod
-    def update(self, new_value: Any) -> None:
-        """
-        Update the factor's value with new data.
-        """
-        pass
+    def __str__(self):
+        return f"{self.value}"
 
-    def __repr__(self):
-        return f"{self.name}: {self.value}  ({self.description})"
-
-class ContinuousFactor(Factor):
+class ContinuousFactor(BaseFactor):
     """
     A factor that holds a continuous (real-valued) variable.
     """
@@ -32,7 +21,7 @@ class ContinuousFactor(Factor):
             raise ValueError("Expected a numeric value for ContinuousFactor.")
         self.value = new_value
 
-class CategoricalFactor(Factor):
+class CategoricalFactor(BaseFactor):
     """
     A factor that holds a categorical value (as a string).
     """
@@ -41,7 +30,7 @@ class CategoricalFactor(Factor):
             raise ValueError("Expected a string value for CategoricalFactor.")
         self.value = new_value
 
-class DiscreteFactor(Factor):
+class DiscreteFactor(BaseFactor):
     """
     A factor that holds a discrete (integer) value.
     """
@@ -50,7 +39,7 @@ class DiscreteFactor(Factor):
             raise ValueError("Expected an integer value for DiscreteFactor.")
         self.value = new_value
 
-class BayesianLinearFactor(ContinuousFactor):
+class BayesianLinearFactor(BaseFactor):
     """
     A continuous factor modeled by a Bayesian linear regression.
     
@@ -58,53 +47,17 @@ class BayesianLinearFactor(ContinuousFactor):
         r = theta0 + theta1*x1 + ... + theta_n*xn + epsilon,
     where theta_i are parameters with associated priors.
     """
-    def __init__(self, name: str, explanatory_vars: Dict[str, float],
-                 theta_prior: Dict[str, float], variance: float, description: str = ""):
-        """
-        :param explanatory_vars: A dict of explanatory variable names and their current values.
-        :param theta_prior: A dict containing the current estimates for the parameters,
-                            e.g., {"theta0": 0.0, "theta_humidity": 1.0, ...}.
-        :param variance: The noise variance sigma^2.
-        """
-        super().__init__(name, value=None, description=description)
-        self.explanatory_vars = explanatory_vars  # e.g., {"humidity": 0.8, "pressure": 1010}
-        self.theta = theta_prior  # e.g., {"theta0": 0.0, "theta_humidity": 1.0, "theta_pressure": 0.001}
-        self.variance = variance  # noise variance
+    def __init__(self, name, explanatory_vars=None, theta_prior=None, variance=1.0, description=""):
+        super().__init__(name, None, description)
+        self.explanatory_vars = explanatory_vars or {}
+        self.theta_prior = theta_prior or {}
+        self.variance = variance
 
-    def predict(self) -> float:
-        """
-        Predict the value using the linear model.
-        """
-        prediction = self.theta.get("theta0", 0.0)
-        for var, val in self.explanatory_vars.items():
-            prediction += self.theta.get(f"theta_{var}", 0.0) * val
-        return prediction
+    def update_explanatory_vars(self, new_vars):
+        self.explanatory_vars.update(new_vars)
 
-    def update(self, observed_value: float) -> None:
-        """
-        Update the parameters using the new observed value.
-        This is a very simple (not fully Bayesian) update for illustration.
-        In a full implementation, you would compute the posterior distribution of theta.
-        """
-        # Set the current observed value
-        self.value = observed_value
-        
-        # Compute the error between the observed value and current prediction.
-        prediction = self.predict()
-        error = observed_value - prediction
-        learning_rate = 0.01  # small constant for illustration
-        
-        # Update theta0
-        self.theta["theta0"] = self.theta.get("theta0", 0.0) + learning_rate * error
-        
-        # Update coefficients for each explanatory variable
-        for var, val in self.explanatory_vars.items():
-            key = f"theta_{var}"
-            self.theta[key] = self.theta.get(key, 0.0) + learning_rate * error * val
-
-    def __repr__(self):
-        return (f"{self.name}: predicted={self.predict():.2f}, observed={self.value}, "
-                f"theta={self.theta}  ({self.description})")
+    def __str__(self):
+        return f"vars={self.explanatory_vars}, prior={self.theta_prior}, var={self.variance}"
 
 # Example usage:
 if __name__ == "__main__":

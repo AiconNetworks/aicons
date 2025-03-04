@@ -1,8 +1,8 @@
 # main.py
-from state_representation.state import EnvironmentState
-from state_representation.factors import ContinuousFactor, CategoricalFactor, DiscreteFactor, BayesianLinearFactor
-from config import DEFAULT_STATE_CONFIG
-from llm_integration import fetch_state_context_from_llm
+from .state_representation.state import EnvironmentState
+from .state_representation.factors import ContinuousFactor, CategoricalFactor, DiscreteFactor, BayesianLinearFactor
+from .config import DEFAULT_STATE_CONFIG
+from .llm_integration import fetch_state_context_from_llm
 
 def create_state_from_config(config: dict) -> EnvironmentState:
     """

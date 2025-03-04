@@ -1,0 +1,262 @@
+[
+  {
+    "type": "continuous",
+    "value": "10000",
+    "description": "Marketing budget in USD"
+  },
+  {
+    "type": "continuous",
+    "value": "0.05",
+    "description": "Current conversion rate"
+  },
+  {
+    "type": "continuous",
+    "value": "4.5",
+    "description": "Average product rating (stars)"
+  },
+  {
+    "type": "continuous",
+    "value": "5",
+    "description": "Radius around retail locations (miles) for targeted ads"
+  },
+  {
+    "type": "continuous",
+    "value": "1000",
+    "description": "Number of website visits in past month"
+  },
+  {
+    "type": "continuous",
+    "value": "200",
+    "description": "Number of product sales in past month"
+  },
+  {
+    "type": "continuous",
+    "value": "0.1",
+    "description": "Click-through rate (CTR)"
+  },
+  {
+    "type": "continuous",
+    "value": "500",
+    "description": "Average order value (AOV) in USD"
+  },
+  {
+    "type": "continuous",
+    "value": "10",
+    "description": "Number of products"
+  },
+  {
+    "type": "continuous",
+    "value": "25",
+    "description": "Percentage of repeat customers"
+  },
+  {
+    "type": "continuous",
+    "value": "100",
+    "description": "Number of social media followers"
+  },
+  {
+    "type": "continuous",
+    "value": "1000",
+    "description": "Number of email subscribers"
+  },
+  {
+    "type": "continuous",
+    "value": "7",
+    "description": "Average time spent on product page (seconds)"
+  },
+  {
+    "type": "continuous",
+    "value": "30",
+    "description": "Average customer age (years)"
+  },
+  {
+    "type": "continuous",
+    "value": "0.5",
+    "description": "Bounce rate on landing pages (decimal)"
+  },
+  {
+    "type": "continuous",
+    "value": "20",
+    "description": "Percentage of customers who abandon cart"
+  },
+  {
+    "type": "continuous",
+    "value": "50",
+    "description": "Number of days to deliver a product"
+  },
+  {
+    "type": "continuous",
+    "value": "2",
+    "description": "Average number of products purchased per order"
+  },
+  {
+    "type": "continuous",
+    "value": "10",
+    "description": "Number of competitor brands"
+  },
+  {
+    "type": "continuous",
+    "value": "100000",
+    "description": "Reach of the advertising campaign"
+  },
+  {
+    "type": "continuous",
+    "value": "5000",
+    "description": "Number of impressions"
+  },
+  {
+    "type": "continuous",
+    "value": "500",
+    "description": "Number of engagements"
+  },
+  {
+    "type": "categorical",
+    "value": "Product Life Cycle",
+    "description": "Stage of product in the market"
+  },
+  {
+    "type": "categorical",
+    "value": "Price Point",
+    "description": "Pricing strategy relative to competitors"
+  },
+  {
+    "type": "categorical",
+    "value": "Distribution Channel",
+    "description": "Where the product is sold"
+  },
+  {
+    "type": "categorical",
+    "value": "Advertising Message",
+    "description": "Style and content of marketing messages"
+  },
+  {
+    "type": "categorical",
+    "value": "Call to Action",
+    "description": "Instructions prompting user interaction"
+  },
+  {
+    "type": "categorical",
+    "value": "Ad Creative Type",
+    "description": "Format of the advertisement"
+  },
+  {
+    "type": "categorical",
+    "value": "Demographics",
+    "description": "Target audience characteristics"
+  },
+  {
+    "type": "categorical",
+    "value": "Psychographics",
+    "description": "Values, attitudes and lifestyles of the target audience"
+  },
+  {
+    "type": "categorical",
+    "value": "Customer Journey Stage",
+    "description": "Point in the customer journey being targeted"
+  },
+  {
+    "type": "categorical",
+    "value": "Campaign Objective",
+    "description": "Goal of the marketing campaign"
+  },
+  {
+    "type": "categorical",
+    "value": "Bidding Strategy",
+    "description": "Approach to bidding on ads"
+  },
+  {
+    "type": "categorical",
+    "value": "Competitor Activity",
+    "description": "Actions of competing businesses"
+  },
+  {
+    "type": "categorical",
+    "value": "Seasonality",
+    "description": "Impact of time of year on sales"
+  },
+  {
+    "type": "categorical",
+    "value": "Economic Conditions",
+    "description": "State of the economy"
+  },
+  {
+    "type": "categorical",
+    "value": "Cultural Events",
+    "description": "Impact of cultural events on sales"
+  },
+  {
+    "type": "categorical",
+    "value": "Platform Changes",
+    "description": "Updates to advertising platforms"
+  },
+  {
+    "type": "discrete",
+    "value": "3",
+    "description": "Number of active marketing campaigns"
+  },
+  {
+    "type": "discrete",
+    "value": "1500",
+    "description": "Total number of customers"
+  },
+  {
+    "type": "discrete",
+    "value": "4.5",
+    "description": "Average product star rating"
+  },
+  {
+    "type": "discrete",
+    "value": "5",
+    "description": "Radius in miles for targeting retail store customers"
+  },
+  {
+    "type": "discrete",
+    "value": "2024",
+    "description": "Current year for seasonal analysis"
+  },
+  {
+    "type": "bayesian_linear",
+    "value": "0.05 (range: 0.02-0.1)",
+    "description": "Predicted conversion rate, which could be modeled based on Budget, Seasonality, Market Trends, Competitor Activity, Ad Creative Quality, Targeting Effectiveness, and Landing Page Experience"
+  },
+  {
+    "type": "bayesian_linear",
+    "value": "250 (range: 100-500)",
+    "description": "Estimated Customer Lifetime Value (CLTV) based on purchase history, customer engagement, demographics, and product usage patterns"
+  },
+  {
+    "type": "bayesian_linear",
+    "value": "10000 (range: 5000-20000)",
+    "description": "Total Campaign Budget allocated across various channels.  The impact on Return on Ad Spend (ROAS) can be modeled based on the budget and other factors"
+  },
+  {
+    "type": "bayesian_linear",
+    "value": "High (during peak season) / Low (off-season)",
+    "description": "Seasonality effects on sales and conversion rates. Explanatory variables could include time of year, historical sales data, and major holidays"
+  },
+  {
+    "type": "bayesian_linear",
+    "value": "Moderate (estimated based on current economic indicators)",
+    "description": "Overall market conditions and their impact on consumer spending habits. This could be modeled with economic indicators, consumer confidence indices, and competitor pricing strategies"
+  },
+  {
+    "type": "bayesian_linear",
+    "value": "0.7 (range: 0.5-0.9)",
+    "description": "Click-Through Rate (CTR) of ads, modeling various ad copies, visuals, targeting options, and platform dynamics"
+  },
+  {
+    "type": "bayesian_linear",
+    "value": "4.5 (range: 4.0-5.0)",
+    "description": "Average product rating based on customer reviews and ratings. This could be modeled based on product features, customer demographics, and brand perception"
+  },
+  {
+    "type": "bayesian_linear",
+    "value": "50% (range: 30%-70%)",
+    "description": "Proportion of customers who return to purchase again, model based on CLTV, product usage, and customer satisfaction"
+  },
+  {
+    "type": "bayesian_linear",
+    "value": "20 (range: 10-30)",
+    "description": "Average number of days to convert (from ad click to purchase). Modeling customer journey, ad placement, and conversion funnel optimization"
+  }
+]

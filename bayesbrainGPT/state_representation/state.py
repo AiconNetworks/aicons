@@ -1,37 +1,25 @@
 # state.py
 from typing import Dict, Any
-from factors import Factor, ContinuousFactor, CategoricalFactor, DiscreteFactor
+from .factors import ContinuousFactor, CategoricalFactor, DiscreteFactor
 
 class EnvironmentState:
     """
     Represents the overall state of the environment.
     Holds a dictionary of factors and provides methods for updating and retrieving the state.
     """
-    def __init__(self, factors: Dict[str, Factor] = None):
-        if factors is None:
-            self.factors = self.build_default_state()
-        else:
-            self.factors = factors
+    def __init__(self, factors=None):
+        self.factors = factors or {}
 
-    @staticmethod
-    def build_default_state() -> Dict[str, Factor]:
-        """
-        Build the default state with predefined factors and default values.
-        """
-        return {
-            "rain": ContinuousFactor(name="rain", value=0.0, description="Rain amount in mm"),
-            "temperature": ContinuousFactor(name="temperature", value=20.0, description="Temperature in °C"),
-            "traffic": CategoricalFactor(name="traffic", value="Light", description="Traffic condition"),
-            "weather": CategoricalFactor(name="weather", value="Clear", description="Overall weather condition"),
-        }
-
-    def update_state(self, sensor_data: Dict[str, Any]) -> None:
-        """
-        Update the state with new sensor data.
-        """
-        for key, new_value in sensor_data.items():
+    def update_state(self, new_data):
+        for key, value in new_data.items():
             if key in self.factors:
-                self.factors[key].update(new_value)
+                if isinstance(value, dict) and key == "rain_prediction":
+                    self.factors[key].update_explanatory_vars(value["explanatory_vars"])
+                else:
+                    self.factors[key].value = value
+
+    def __str__(self):
+        return "\n".join(f"{k}: {v}" for k, v in self.factors.items())
 
     def get_state(self) -> Dict[str, Any]:
         """

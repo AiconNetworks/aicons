@@ -1,33 +1,25 @@
 # Default configuration for the environment state factors.
 DEFAULT_STATE_CONFIG = {
-    "rain": {
-        "type": "bayesian_linear",  # We want to use our Bayesian linear model for rain.
-        "value": None,              # Initially, the value is not set.
-        "description": "Rain amount in mm predicted by a Bayesian linear model",
-        "explanatory_vars": {
-            "humidity": 0.75,       # Default humidity value.
-            "pressure": 1012        # Default pressure in hPa.
-        },
-        "theta_prior": {
-            "theta0": 0.0,
-            "theta_humidity": 1.0,
-            "theta_pressure": 0.001
-        },
-        "variance": 4.0
-    },
     "temperature": {
         "type": "continuous",
         "value": 20.0,
-        "description": "Temperature in °C"
-    },
-    "traffic": {
-        "type": "categorical",
-        "value": "Light",
-        "description": "Traffic condition"
+        "description": "Ambient temperature in Celsius"
     },
     "weather": {
         "type": "categorical",
-        "value": "Clear",
-        "description": "Overall weather condition"
+        "value": "sunny",
+        "description": "Current weather condition"
+    },
+    "traffic_density": {
+        "type": "discrete",
+        "value": 2,
+        "description": "Traffic density level (1-5)"
+    },
+    "rain_prediction": {
+        "type": "bayesian_linear",
+        "explanatory_vars": {"humidity": 0.7, "pressure": 1013},
+        "theta_prior": {"mean": [0.0, 0.0], "variance": [1.0, 1.0]},
+        "variance": 1.0,
+        "description": "Rain prediction model based on humidity and pressure"
     }
 }
