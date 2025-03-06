@@ -2,6 +2,7 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict
 import numpy as np
+import torch
 
 class BaseFactor:
     def __init__(self, name, value=None, description=""):
@@ -58,6 +59,13 @@ class BayesianLinearFactor(BaseFactor):
 
     def __str__(self):
         return f"vars={self.explanatory_vars}, prior={self.theta_prior}, var={self.variance}"
+
+    def get_prior_params(self) -> Dict[str, Any]:
+        """Get prior parameters in a format suitable for Pyro"""
+        return {
+            "mean": torch.tensor([v["mean"] for v in self.theta_prior.values()]),
+            "variance": torch.tensor([v["variance"] for v in self.theta_prior.values()])
+        }
 
 # Example usage:
 if __name__ == "__main__":
