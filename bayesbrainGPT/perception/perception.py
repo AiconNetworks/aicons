@@ -166,76 +166,100 @@ class BayesianPerception:
 
     def update_all(self):
         """Run full Bayesian update considering all relationships"""
-        print("\n=== Starting Bayesian Update ===")
-        
-        # 1. Collect sensor data
+        # Collect sensor data
         all_sensor_data = {}
         for sensor in self.sensors.values():
             sensor_data = sensor.get_data()
             for factor, (value, reliability) in sensor_data.items():
                 all_sensor_data[factor] = (value, reliability)
-                print(f"\nReceived sensor data:")
-                print(f"  {factor}: value={value}, reliability={reliability}")
+                print(f"Got sensor data - {factor}: {value}")
         
-        print("\nInitial state:")
+        print("\nCurrent state:")
         for name, factor in self.state.factors.items():
             print(f"  {name}: {factor.value}")
-            if hasattr(factor, 'relationships'):
-                print(f"  {name} relationships: {factor.relationships}")
         
-        # 2. Run MCMC
+        # Run MCMC
         print("\nRunning MCMC sampling...")
         nuts_kernel = NUTS(self.model)
         mcmc = MCMC(nuts_kernel, num_samples=50, warmup_steps=25)
         mcmc.run(**all_sensor_data)
         
-        # 3. Get samples and prepare for update
+        # Get final samples and clean up names
         samples = mcmc.get_samples()
-        final_samples = {name: samples[name][-1] for name in samples}
-        
-        print("\nFinal samples obtained:")
+        final_samples = {}
+        for name in samples:
+            # Strip suffixes to get base name
+            base_name = name.replace('_dependent', '').replace('_prior', '')
+            if base_name in self.state.factors:
+                # Always take the dependent version if it exists
+                if name.endswith('_dependent'):
+                    final_samples[base_name] = samples[name][-1]
+                    print(f"Added {name} -> {base_name}")
+                elif name.endswith('_prior') and base_name not in final_samples:
+                    final_samples[base_name] = samples[name][-1]
+                    print(f"Added {name} -> {base_name}")
+
+        print("\n=== DEBUG: Final Samples after cleanup ===")
         for name, sample in final_samples.items():
-            print(f"  {name}: {sample}")
+            print(f"{name}: {sample}")
+
+        print("\nAll available samples:")
+        for name in samples:
+            print(f"  {name}")
         
-        # 4. Update factors in correct order
-        print("\nUpdating factors in dependency order:")
-        
-        # First independent factors
+        # First update independent factors
         updated_values = {}
         for name, factor in self.state.factors.items():
+            print(f"\nChecking factor {name}:")
+            print(f"  Has dependencies: {self._has_dependencies(factor)}")
+            print(f"  In final samples: {name in final_samples}")
             if not self._has_dependencies(factor):
                 if name in final_samples:
-                    print(f"\nUpdating independent factor {name}:")
                     old_value = factor.value
-                    self._update_factor_from_sample(name, factor, final_samples[name])
-                    updated_values[name] = factor.value
-                    print(f"  {name} changed: {old_value} -> {factor.value}")
+                    if isinstance(factor, CategoricalFactor):
+                        # Handle categorical factors
+                        probs = final_samples[name]
+                        category_idx = probs.argmax().item()
+                        new_value = factor.possible_values[category_idx]
+                        factor.value = new_value
+                        updated_values[name] = new_value
+                        print(f"Independent - {name}: {old_value} -> {new_value}")
+                        print(f"  probabilities: {dict(zip(factor.possible_values, probs.tolist()))}")
+                    else:
+                        # Handle numerical factors
+                        new_value = float(final_samples[name])
+                        factor.value = new_value
+                        updated_values[name] = new_value
+                        print(f"Independent - {name}: {old_value:.2f} -> {new_value:.2f}")
         
-        # Then dependent factors
+        # Then update dependent factors
         dependency_order = self._get_dependency_order()
-        print(f"\nDependency order: {dependency_order}")
-        
         for name in dependency_order:
             if name in final_samples:
                 factor = self.state.factors[name]
-                print(f"\nUpdating dependent factor {name}:")
-                old_value = factor.value
-                
                 if self._has_dependencies(factor):
-                    print(f"  Computing dependent value for {name}")
-                    print(f"  Using updated values: {updated_values}")
-                    mean = self._compute_dependent_mean(factor, updated_values)
-                    factor.value = float(mean)
-                    print(f"  Computed new value from dependencies: {factor.value}")
-                else:
-                    self._update_factor_from_sample(name, factor, final_samples[name])
-                
-                updated_values[name] = factor.value
-                print(f"  {name} changed: {old_value} -> {factor.value}")
-        
-        print("\n=== Final State ===")
+                    old_value = factor.value
+                    if isinstance(factor, CategoricalFactor):
+                        # Handle categorical factors
+                        probs = final_samples[name]
+                        category_idx = probs.argmax().item()
+                        new_value = factor.possible_values[category_idx]
+                    else:
+                        # Handle numerical factors
+                        sampled_value = float(final_samples[name])
+                        mean = self._compute_dependent_mean(factor, updated_values)
+                        new_value = (sampled_value + float(mean)) / 2.0
+                    
+                    factor.value = new_value
+                    updated_values[name] = new_value
+                    print(f"Dependent - {name}: {old_value} -> {new_value}")
+
+        print("\nFinal State:")
         for name, factor in self.state.factors.items():
-            print(f"{name}: {factor.value}")
+            if isinstance(factor, CategoricalFactor):
+                print(f"  {name}: {factor.value}")
+            else:
+                print(f"  {name}: {factor.value:.2f}")
 
     def _update_factor_from_sample(self, name: str, factor, sample):
         """Update a factor based on the final MCMC sample"""
@@ -270,18 +294,14 @@ class BayesianPerception:
             
             dep_value = sampled_values[dependency]
             
-            # Handle relaxed categorical values (one-hot vectors)
-            if isinstance(dep_value, torch.Tensor) and len(dep_value.shape) > 0:
+            # Handle categorical dependencies
+            if isinstance(self.state.factors[dependency], CategoricalFactor):
                 if model["type"] == "categorical_effect":
-                    dep_factor = self.state.factors[dependency]
-                    effects = torch.tensor([
-                        model["effects"].get(val, 0.0) 
-                        for val in dep_factor.possible_values
-                    ])
-                    effect = (dep_value * effects).sum()
+                    # Get effect for the current category
+                    effect = model["effects"].get(dep_value, 0.0)
                     base_value += float(effect)
-                    print(f"  {factor.name}: Categorical effect from {dependency}: {float(effect)}")
-            # Handle numerical values
+                    print(f"  {factor.name}: Effect from {dependency}={dep_value}: {effect}")
+            # Handle numerical dependencies
             else:
                 dep_value = float(dep_value)
                 if model["type"] == "linear":
