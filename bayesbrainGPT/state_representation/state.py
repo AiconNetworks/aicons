@@ -60,13 +60,16 @@ class EnvironmentState:
                 self.factors[name] = ContinuousFactor(
                     name=name,
                     initial_value=factor_config["value"],
-                    description=factor_config["description"]
+                    description=factor_config["description"],
+                    relationships=factor_config.get("relationships", {})
                 )
             elif factor_config["type"] == "categorical":
                 self.factors[name] = CategoricalFactor(
                     name=name,
                     initial_value=factor_config["value"],
-                    description=factor_config["description"]
+                    description=factor_config["description"],
+                    relationships=factor_config.get("relationships", {}),
+                    possible_values=factor_config.get("possible_values", None)
                 )
             elif factor_config["type"] == "discrete":
                 self.factors[name] = DiscreteFactor(

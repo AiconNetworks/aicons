@@ -1,15 +1,16 @@
 # bayesian_factors.py
 from abc import ABC, abstractmethod
-from typing import Any, Dict
+from typing import Any, Dict, List
 import numpy as np
 import torch
 
 class BaseFactor:
-    def __init__(self, name: str, initial_value: Any = None, description: str = ""):
+    def __init__(self, name: str, initial_value: Any = None, description: str = "", relationships: Dict = None):
         self.name = name
         self.initial_value = initial_value
         self.value = initial_value  # Current value starts as initial value
         self.description = description
+        self.relationships = relationships or {}  # Store relationships
 
     def __str__(self):
         return f"{self.value}"
@@ -22,8 +23,8 @@ class ContinuousFactor(BaseFactor):
     """
     A factor that holds a continuous (real-valued) variable.
     """
-    def __init__(self, name: str, initial_value: float, description: str = ""):
-        super().__init__(name, initial_value, description)
+    def __init__(self, name: str, initial_value: float, description: str = "", relationships: Dict = None):
+        super().__init__(name, initial_value, description, relationships)
         self._uncertainty = 1.0  # Default uncertainty
         
     @property
@@ -44,9 +45,18 @@ class CategoricalFactor(BaseFactor):
     """
     A factor that holds a categorical value (as a string).
     """
+    def __init__(self, name: str, initial_value: str, description: str = "", 
+                 relationships: Dict = None, possible_values: List[str] = None):
+        super().__init__(name, initial_value, description, relationships)
+        self.possible_values = possible_values or [initial_value]  # If no values provided, use initial value
+        if initial_value not in self.possible_values:
+            self.possible_values.append(initial_value)
+
     def update(self, new_value: str) -> None:
         if not isinstance(new_value, str):
             raise ValueError("Expected a string value for CategoricalFactor.")
+        if new_value not in self.possible_values:
+            raise ValueError(f"Value {new_value} not in possible values: {self.possible_values}")
         self.value = new_value
 
 class DiscreteFactor(BaseFactor):

@@ -75,4 +75,13 @@ class StaticTrafficSensor(Sensor):
 
     def receive_data(self, data: Dict[str, Any]):
         """Static sensors typically don't receive push updates"""
-        raise NotImplementedError("Static sensors don't support push updates") 
+        raise NotImplementedError("Static sensors don't support push updates")
+
+    def get_data(self):
+        """Return static traffic data for testing"""
+        return {
+            "traffic_density": (
+                torch.tensor(4.0),  # Value
+                0.9  # Reliability
+            )
+        } 
