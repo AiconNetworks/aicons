@@ -282,7 +282,6 @@ class BayesianPerception:
             return factor.value
 
         base_value = float(factor.value)
-        original_value = base_value  # Store original for logging
         
         if not hasattr(factor, 'relationships') or 'model' not in factor.relationships:
             return torch.tensor(base_value)
@@ -297,10 +296,8 @@ class BayesianPerception:
             # Handle categorical dependencies
             if isinstance(self.state.factors[dependency], CategoricalFactor):
                 if model["type"] == "categorical_effect":
-                    # Get effect for the current category
                     effect = model["effects"].get(dep_value, 0.0)
                     base_value += float(effect)
-                    print(f"  {factor.name}: Effect from {dependency}={dep_value}: {effect}")
             # Handle numerical dependencies
             else:
                 dep_value = float(dep_value)
@@ -308,14 +305,47 @@ class BayesianPerception:
                     effect = model["coefficient"] * dep_value
                     base = model.get("base", base_value)
                     base_value = base + effect
-                    print(f"  {factor.name}: Linear effect from {dependency}: base={base}, coeff={model['coefficient']}, value={dep_value}")
                 elif model["type"] == "exponential":
                     effect = model["base"] * torch.exp(model["scale"] * dep_value)
                     base_value *= float(effect)
-                    print(f"  {factor.name}: Exponential effect from {dependency}: base={model['base']}, scale={model['scale']}, value={dep_value}")
 
-        if base_value != original_value:
-            print(f"  {factor.name}: Value changed {original_value:.2f} -> {base_value:.2f}")
+        return torch.tensor(base_value)
+
+    def _debug_compute_mean(self, factor, sampled_values: dict):
+        """Debug version that prints computation steps"""
+        if isinstance(factor, CategoricalFactor):
+            return factor.value
+
+        base_value = float(factor.value)
+        original_value = base_value
+        
+        if not hasattr(factor, 'relationships') or 'model' not in factor.relationships:
+            return torch.tensor(base_value)
+
+        # Process each dependency
+        for dependency, model in factor.relationships["model"].items():
+            if dependency not in sampled_values:
+                continue
+            
+            dep_value = sampled_values[dependency]
+            
+            # Handle categorical dependencies
+            if isinstance(self.state.factors[dependency], CategoricalFactor):
+                if model["type"] == "categorical_effect":
+                    effect = model["effects"].get(dep_value, 0.0)
+                    base_value += float(effect)
+            # Handle numerical dependencies
+            else:
+                dep_value = float(dep_value)
+                if model["type"] == "linear":
+                    effect = model["coefficient"] * dep_value
+                    base = model.get("base", base_value)
+                    base_value = base + effect
+                elif model["type"] == "exponential":
+                    effect = model["base"] * torch.exp(model["scale"] * dep_value)
+                    base_value *= float(effect)
+
+        print(f"  {factor.name}: Value changed {original_value:.2f} -> {base_value:.2f}")
         return torch.tensor(base_value)
 
     def _has_dependencies(self, factor) -> bool:
