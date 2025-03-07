@@ -8,7 +8,7 @@ from bayesbrainGPT.config import DEFAULT_STATE_CONFIG
 @pytest.fixture
 def state():
     """Create a test state with default config"""
-    return EnvironmentState(DEFAULT_STATE_CONFIG)
+    return EnvironmentState(factors_config=DEFAULT_STATE_CONFIG)
 
 @pytest.fixture
 def perception(state):
@@ -40,16 +40,16 @@ def test_sensor_registration(perception, weather_sensor):
 def test_weather_sensor_data(weather_sensor):
     """Test that weather sensor returns correct data format"""
     data = weather_sensor.get_data()
-    assert "T_obs" in data
-    assert "r_obs" in data
-    assert isinstance(data["T_obs"], torch.Tensor)
-    assert isinstance(data["r_obs"], torch.Tensor)
+    assert "temperature" in data
+    assert "rain" in data
+    assert isinstance(data["temperature"], torch.Tensor)
+    assert isinstance(data["rain"], torch.Tensor)
 
 def test_traffic_sensor_data(traffic_sensor):
     """Test that traffic sensor returns correct data format"""
     data = traffic_sensor.get_data()
-    assert "d_obs" in data
-    assert isinstance(data["d_obs"], torch.Tensor)
+    assert "traffic_density" in data
+    assert isinstance(data["traffic_density"], torch.Tensor)
 
 def test_update_from_sensor(perception, weather_sensor):
     """Test updating perception from a single sensor"""

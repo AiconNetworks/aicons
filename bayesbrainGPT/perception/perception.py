@@ -4,7 +4,8 @@ import pyro.distributions as dist
 from pyro.infer import MCMC, NUTS
 from typing import Dict, List, Optional
 from ..state_representation.state import EnvironmentState
-from .sensor import Sensor
+from ..state_representation.factors import BayesianLinearFactor, ContinuousFactor, CategoricalFactor, DiscreteFactor
+from ..sensors import Sensor
 
 class BayesianPerception:
     """
@@ -17,22 +18,32 @@ class BayesianPerception:
         
     def setup_pyro_model(self):
         """Initialize the Pyro model with current state priors"""
-        # Define the model based on state factors
-        def model():
-            # Get priors from state
+        def model(**observations):
             for factor_name, factor in self.state.factors.items():
                 if isinstance(factor, BayesianLinearFactor):
-                    # Handle Bayesian linear factors
                     self._sample_bayesian_linear(factor_name, factor)
                 elif isinstance(factor, ContinuousFactor):
-                    # Handle continuous factors
-                    self._sample_continuous(factor_name, factor)
+                    value = self._sample_continuous(factor_name, factor)
+                    if factor_name in observations:
+                        obs_value = observations[factor_name][0]  # Get just the value
+                        reliability = observations[factor_name][1]  # Get reliability
+                        noise_scale = torch.tensor(1.0) / reliability
+                        pyro.sample(
+                            f"{factor_name}_obs",
+                            dist.Normal(value, noise_scale),
+                            obs=obs_value
+                        )
                 elif isinstance(factor, CategoricalFactor):
-                    # Handle categorical factors with relaxation
                     self._sample_categorical(factor_name, factor)
                 elif isinstance(factor, DiscreteFactor):
-                    # Handle discrete factors with continuous relaxation
-                    self._sample_discrete(factor_name, factor)
+                    value = self._sample_discrete(factor_name, factor)
+                    # Add observation if available for this factor
+                    if factor_name in observations:
+                        pyro.sample(
+                            f"{factor_name}_obs", 
+                            dist.Normal(value, torch.tensor(0.1)), 
+                            obs=observations[factor_name]
+                        )
         
         self.model = model
 
@@ -57,9 +68,16 @@ class BayesianPerception:
 
     def _sample_continuous(self, name: str, factor: ContinuousFactor):
         """Sample from a continuous factor"""
-        # Use current value as mean and add some uncertainty
-        mean = torch.tensor(float(factor.value)) if factor.value is not None else torch.tensor(0.0)
-        pyro.sample(name, dist.Normal(mean, torch.tensor(1.0)))
+        # Create a prior distribution based on the current value
+        prior_mean = torch.tensor(factor.value if factor.value is not None else 0.0)
+        prior_std = torch.tensor(1.0)
+        
+        # Sample from the prior
+        value = pyro.sample(
+            name,
+            dist.Normal(prior_mean, prior_std)
+        )
+        return value  # Make sure we return the sampled value
 
     def _sample_categorical(self, name: str, factor: CategoricalFactor):
         """Sample from a categorical factor using relaxation"""
@@ -82,21 +100,25 @@ class BayesianPerception:
         self.sensors[sensor.name] = sensor
 
     def update_from_sensor(self, sensor_name: str):
-        """Update perception based on data from a specific sensor"""
+        """Update state using data from a specific sensor"""
         if sensor_name not in self.sensors:
-            raise ValueError(f"Unknown sensor: {sensor_name}")
+            raise ValueError(f"No sensor registered with name {sensor_name}")
         
-        sensor = self.sensors[sensor_name]
-        sensor_data = sensor.get_data()
+        # Get data and separate values from reliabilities
+        sensor_data = self.sensors[sensor_name].get_data()
         
-        # Run inference with the sensor data
-        nuts_kernel = NUTS(self.model)
-        mcmc = MCMC(nuts_kernel, num_samples=2000, warmup_steps=1000)
-        mcmc.run(**sensor_data)
+        # Process each observation
+        for factor, (value, reliability) in sensor_data.items():
+            print(f"Processing {factor} with reliability: {reliability}")
+            # For now, just use the value directly
+            if factor in self.state.factors:
+                self.state.factors[factor].value = value.item()
+                # Update uncertainty based on reliability
+                # Less reliable (reliability -> 0) means more uncertainty
+                new_uncertainty = 1.0 / reliability if reliability > 0 else float('inf')
+                self.state.factors[factor].update_uncertainty(new_uncertainty)
         
-        # Update state with posterior samples
-        samples = mcmc.get_samples()
-        self._update_state_from_samples(samples)
+        # TODO: Later we'll implement proper Bayesian updates considering reliability
 
     def update_all(self):
         """Update perception using all registered sensors"""

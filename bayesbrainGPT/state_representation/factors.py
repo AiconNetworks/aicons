@@ -5,18 +5,36 @@ import numpy as np
 import torch
 
 class BaseFactor:
-    def __init__(self, name, value=None, description=""):
+    def __init__(self, name: str, initial_value: Any = None, description: str = ""):
         self.name = name
-        self.value = value
+        self.initial_value = initial_value
+        self.value = initial_value  # Current value starts as initial value
         self.description = description
 
     def __str__(self):
         return f"{self.value}"
 
+    def reset(self):
+        """Reset to initial value"""
+        self.value = self.initial_value
+
 class ContinuousFactor(BaseFactor):
     """
     A factor that holds a continuous (real-valued) variable.
     """
+    def __init__(self, name: str, initial_value: float, description: str = ""):
+        super().__init__(name, initial_value, description)
+        self._uncertainty = 1.0  # Default uncertainty
+        
+    @property
+    def uncertainty(self):
+        """Get the current uncertainty (standard deviation) of the belief"""
+        return self._uncertainty
+        
+    def update_uncertainty(self, new_uncertainty: float):
+        """Update the uncertainty of our belief"""
+        self._uncertainty = max(0.0, new_uncertainty)  # Ensure non-negative
+
     def update(self, new_value: float) -> None:
         if not isinstance(new_value, (int, float)):
             raise ValueError("Expected a numeric value for ContinuousFactor.")

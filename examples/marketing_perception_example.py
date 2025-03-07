@@ -1,20 +1,34 @@
 import torch
 from bayesbrainGPT.state_representation import EnvironmentState
 from bayesbrainGPT.perception import BayesianPerception
-from bayesbrainGPT.perception.sensor import Sensor
+from bayesbrainGPT.sensors.base import Sensor
 from typing import Dict, Any
 
 class MarketingSensor(Sensor):
-    def __init__(self):
-        super().__init__("marketing_sensor")
+    """Marketing sensor that pulls data from marketing platforms"""
+    def __init__(self, state: EnvironmentState, reliability: float = 0.85):
+        super().__init__("marketing_sensor", state, reliability)
         
-    def get_data(self) -> Dict[str, torch.Tensor]:
+    def _setup_observable_factors(self):
+        """Define which marketing metrics this sensor can observe"""
+        self.observable_factors = [
+            name for name, factor in self.state.factors.items()
+            if name in ["conversion_rate", "click_through_rate", "average_order_value"]
+        ]
+
+    def fetch_data(self) -> Dict[str, torch.Tensor]:
+        """Actively fetch marketing data"""
         # In real world, this would fetch data from your marketing platforms
         return {
             "conversion_rate": torch.tensor(0.05),
             "click_through_rate": torch.tensor(0.02),
             "average_order_value": torch.tensor(100.0)
         }
+
+    def receive_data(self, data: Dict[str, Any]):
+        """Handle webhook updates from marketing platforms"""
+        # This could handle real-time updates from marketing APIs
+        raise NotImplementedError("Push updates not implemented for marketing sensor")
 
 # Create marketing-specific state configuration
 MARKETING_STATE_CONFIG = {
@@ -52,8 +66,8 @@ def main():
     # Create perception system
     perception = BayesianPerception(state)
     
-    # Register marketing sensor
-    marketing_sensor = MarketingSensor()
+    # Register marketing sensor with state and reliability score
+    marketing_sensor = MarketingSensor(state, reliability=0.85)
     perception.register_sensor(marketing_sensor)
     
     # Update perception
