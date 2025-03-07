@@ -107,16 +107,21 @@ class BayesianPerception:
         # Get data and separate values from reliabilities
         sensor_data = self.sensors[sensor_name].get_data()
         
+        print("\nPERCEPTION UPDATE:")
         # Process each observation
         for factor, (value, reliability) in sensor_data.items():
-            print(f"Processing {factor} with reliability: {reliability}")
-            # For now, just use the value directly
             if factor in self.state.factors:
-                self.state.factors[factor].value = value.item()
-                # Update uncertainty based on reliability
-                # Less reliable (reliability -> 0) means more uncertainty
+                factor_obj = self.state.factors[factor]
+                print(f"\nFactor: {factor}")
+                print(f"Prior: Normal(μ={factor_obj.value}, σ={factor_obj.uncertainty})")
+                print(f"Observation: value={value.item()}, reliability={reliability}")
+                
+                # Update value and uncertainty
+                factor_obj.value = value.item()
                 new_uncertainty = 1.0 / reliability if reliability > 0 else float('inf')
-                self.state.factors[factor].update_uncertainty(new_uncertainty)
+                factor_obj.update_uncertainty(new_uncertainty)
+                
+                print(f"Posterior: Normal(μ={factor_obj.value}, σ={factor_obj.uncertainty})")
         
         # TODO: Later we'll implement proper Bayesian updates considering reliability
 

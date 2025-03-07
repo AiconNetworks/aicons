@@ -46,24 +46,52 @@ def test_posterior_uncertainty(complex_state):
     """Test that sensor reliability affects posterior uncertainty"""
     perception = BayesianPerception(complex_state)
     
+    # Print initial state with more detail
+    print("\nPRIOR BELIEFS:")
+    print("Traffic Density:")
+    print(f"  Value: {complex_state.factors['traffic_density'].value}")
+    print(f"  Uncertainty: {complex_state.factors['traffic_density'].uncertainty}")
+    print(f"  Distribution: Normal(μ={complex_state.factors['traffic_density'].value}, σ={complex_state.factors['traffic_density'].uncertainty})")
+    
     # Create two sensors with different reliabilities
     reliable_sensor = StaticTrafficSensor(complex_state, "downtown", reliability=0.9)
     unreliable_sensor = StaticTrafficSensor(complex_state, "suburb", reliability=0.3)
     
     # Update with reliable sensor
     perception.register_sensor(reliable_sensor)
+    sensor_data = reliable_sensor.get_data()
+    print("\nRELIABLE SENSOR DATA:")
+    print(f"  Reading: {sensor_data['traffic_density'][0].item()}")
+    print(f"  Reliability: {sensor_data['traffic_density'][1]}")
+    print(f"  Observation noise: {1.0/sensor_data['traffic_density'][1]}")
+    
     perception.update_from_sensor(reliable_sensor.name)
     reliable_posterior_std = complex_state.factors["traffic_density"].uncertainty
     
-    # Reset state
-    complex_state.reset()
+    print("\nPOSTERIOR AFTER RELIABLE SENSOR:")
+    print(f"  Value: {complex_state.factors['traffic_density'].value}")
+    print(f"  Uncertainty: {reliable_posterior_std}")
+    print(f"  Distribution: Normal(μ={complex_state.factors['traffic_density'].value}, σ={reliable_posterior_std})")
     
-    # Update with unreliable sensor
+    # Reset and update with unreliable sensor
+    complex_state.reset()
     perception.register_sensor(unreliable_sensor)
+    sensor_data = unreliable_sensor.get_data()
+    
+    print("\nUNRELIABLE SENSOR DATA:")
+    print(f"  Reading: {sensor_data['traffic_density'][0].item()}")
+    print(f"  Reliability: {sensor_data['traffic_density'][1]}")
+    print(f"  Observation noise: {1.0/sensor_data['traffic_density'][1]}")
+    
     perception.update_from_sensor(unreliable_sensor.name)
     unreliable_posterior_std = complex_state.factors["traffic_density"].uncertainty
     
-    # Less reliable sensor should result in higher uncertainty
+    print("\nPOSTERIOR AFTER UNRELIABLE SENSOR:")
+    print(f"  Value: {complex_state.factors['traffic_density'].value}")
+    print(f"  Uncertainty: {unreliable_posterior_std}")
+    print(f"  Distribution: Normal(μ={complex_state.factors['traffic_density'].value}, σ={unreliable_posterior_std})")
+    
+    # Compare uncertainties
     assert unreliable_posterior_std > reliable_posterior_std
 
 def test_multiple_updates_convergence(complex_state):
