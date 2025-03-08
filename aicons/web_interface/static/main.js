@@ -1,3 +1,16 @@
+// State management
+let currentState = {};
+
+// Initialize state
+async function initializeState() {
+    try {
+        const response = await fetch('/api/state');
+        currentState = await response.json();
+    } catch (error) {
+        console.error('Error initializing state:', error);
+    }
+}
+
 // Fetch and update state
 async function updateState() {
     const response = await fetch('/api/state');
@@ -50,6 +63,7 @@ async function updateChainHistory() {
 
 // Initial load
 document.addEventListener('DOMContentLoaded', () => {
+    initializeState();
     updateState();
     updateChainHistory();
     // Update state every 5 seconds
@@ -66,13 +80,15 @@ async function sendMessage() {
         // Add user message to chat
         addMessageToChat(message, 'user');
         
+        // Send message to backend
         const response = await fetch('/api/chat', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                message: message
+                message: message,
+                current_state: currentState
             })
         });
         
@@ -81,10 +97,16 @@ async function sendMessage() {
         // Add AI response to chat
         addMessageToChat(data.response, 'ai');
         
+        // Update state if it was modified
+        if (data.new_state) {
+            currentState = data.new_state;
+        }
+        
         // Clear input
         messageInput.value = '';
     } catch (error) {
         console.error('Error:', error);
+        addMessageToChat('Sorry, there was an error processing your message.', 'ai');
     }
 }
 
@@ -97,7 +119,7 @@ function addMessageToChat(message, type) {
     chatHistory.scrollTop = chatHistory.scrollHeight;
 }
 
-// Handle enter key to send message
+// Event listeners
 document.addEventListener('DOMContentLoaded', () => {
     const messageInput = document.getElementById('message-input');
     messageInput.addEventListener('keypress', (e) => {
