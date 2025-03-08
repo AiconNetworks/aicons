@@ -1,8 +1,8 @@
 import torch
-from bayesbrainGPT.state_representation import EnvironmentState
-from bayesbrainGPT.perception import BayesianPerception
-from bayesbrainGPT.sensors.traffic import StaticTrafficSensor
-from bayesbrainGPT.config import DEFAULT_STATE_CONFIG
+from aicons.bayesbrainGPT.state_representation import EnvironmentState
+from aicons.bayesbrainGPT.perception import BayesianPerception
+from aicons.bayesbrainGPT.sensors.traffic import StaticTrafficSensor
+from aicons.bayesbrainGPT.config import DEFAULT_STATE_CONFIG
 
 def create_test_config():
     return {
