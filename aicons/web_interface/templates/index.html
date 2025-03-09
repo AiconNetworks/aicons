@@ -1,27 +1,116 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>AIcons Chat Interface</title>
-    <link rel="stylesheet" href="https://use.typekit.net/[your-kit-code].css">
+    <title>AIcons Interface</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    <style>
-        @font-face {
-            font-family: "ITC Avant Garde Gothic";
-            src: url("https://use.typekit.net/af/578452/00000000000000003b9b0438/27/l?primer=7cdcb44be4a7db8877ffa5c0007b8dd865b3bbc383831fe2ea177f62257a9191&fvd=n7&v=3") format("woff2");
-            font-weight: normal;
-            font-style: normal;
-        }
-    </style>
 </head>
 <body>
-    <div class="container">
+    <!-- Start Screen -->
+    <div class="start-container" id="start-screen">
         <h1>Babel / Aicons</h1>
-        
-        <div class="chat-panel">
-            <div id="chat-history"></div>
-            <div class="chat-input">
-                <textarea id="message-input" placeholder="Type your message..."></textarea>
-                <button onclick="sendMessage()">Send</button>
+        <p class="subtitle">Bayesian Intelligence System</p>
+        <button id="create-button" onclick="showCreateForm()">Create AIcon</button>
+    </div>
+
+    <!-- Create AIcon Form -->
+    <div class="modal" id="create-modal" style="display: none;">
+        <div class="modal-content">
+            <h2>Create AIcon</h2>
+            <form id="create-form" onsubmit="createAIcon(event)">
+                <div class="form-group">
+                    <label for="aicon-name">Name:</label>
+                    <input type="text" id="aicon-name" required>
+                </div>
+                <div class="form-group">
+                    <label for="aicon-type">Type:</label>
+                    <select id="aicon-type">
+                        <option value="marketing">Marketing Agent</option>
+                        <option value="analysis">Analysis Agent</option>
+                        <option value="custom">Custom Agent</option>
+                    </select>
+                </div>
+                <div class="button-group">
+                    <button type="submit">Initialize</button>
+                    <button type="button" onclick="hideModals()">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Loading Screen -->
+    <div class="loading-screen" id="loading-screen" style="display: none;">
+        <div class="loading-content">
+            <div class="loading-spinner"></div>
+            <div class="loading-text">
+                <p>Initializing AIcon System</p>
+                <p id="loading-status">Loading...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Factor Definition Interface (only shown for new AIcon) -->
+    <div class="aicon-workspace" id="factor-interface" style="display: none;">
+        <div class="top-bar">
+            <h1>Factor Definition</h1>
+            <div class="status-indicator">
+                <span class="status-dot active"></span>
+                <span id="init-status">Defining Factors</span>
+            </div>
+        </div>
+
+        <div class="main-grid">
+            <div class="panel factors">
+                <h2>Defined Factors</h2>
+                <div class="start-button-container">
+                    <button id="start-button" class="start-button" onclick="startDashboard()">Start AIcon</button>
+                </div>
+                <div id="factors-display"></div>
+            </div>
+
+            <div class="panel chat">
+                <h2>Factor Definition Chat</h2>
+                <div id="chat-history"></div>
+                <div class="input-area">
+                    <textarea id="user-input" placeholder="Discuss factors with the AIcon..."></textarea>
+                    <button onclick="sendToAicon()">Send</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Dashboard -->
+    <div class="aicon-workspace" id="dashboard" style="display: none;">
+        <div class="top-bar">
+            <h1>AIcon Dashboard</h1>
+            <div class="status-indicator">
+                <span class="status-dot active"></span>
+                <span>Active</span>
+            </div>
+        </div>
+
+        <div class="main-grid">
+            <div class="panel decision-space">
+                <h2>Decision Space</h2>
+                <div id="decision-display"></div>
+            </div>
+
+            <div class="panel sensors">
+                <h2>Active Sensors</h2>
+                <div id="sensors-list"></div>
+            </div>
+
+            <div class="panel priors">
+                <h2>Prior Knowledge</h2>
+                <div id="priors-display"></div>
+            </div>
+
+            <div class="panel interaction">
+                <h2>AIcon Interaction</h2>
+                <div id="questions-display"></div>
+                <div class="input-area">
+                    <textarea id="main-input" placeholder="Interact with AIcon..."></textarea>
+                    <button onclick="sendToAicon()">Send</button>
+                </div>
             </div>
         </div>
     </div>
