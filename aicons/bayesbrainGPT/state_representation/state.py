@@ -10,6 +10,10 @@ class EnvironmentState:
     Can be initialized from either:
     1. LLM-derived state (from real LLM or mock data)
     2. Configuration-based state (for testing/default behavior)
+    3. Manual factor addition (for precise control over state factors)
+    
+    Note: All state updates should happen through BayesianPerception, not directly.
+    The state only serves as a container for factors.
     """
     def __init__(self, factors_config=None, use_llm=False, mock_llm=True):
         self.factors = {}
@@ -26,9 +30,9 @@ class EnvironmentState:
                 from ..llm_integration import fetch_state_context_from_llm
                 llm_factors = fetch_state_context_from_llm("Get current marketing state factors")
                 self._initialize_from_llm_data(llm_factors)
-        else:
+        elif factors_config:
             # Use provided configuration
-            self._initialize_from_config(factors_config or {})
+            self._initialize_from_config(factors_config)
 
     def _initialize_from_llm_data(self, llm_factors):
         """Initialize state from LLM-derived data"""
@@ -86,14 +90,6 @@ class EnvironmentState:
                     description=factor_config["description"]
                 )
 
-    def update_state(self, new_data):
-        for key, value in new_data.items():
-            if key in self.factors:
-                if isinstance(value, dict) and key == "rain_prediction":
-                    self.factors[key].update_explanatory_vars(value["explanatory_vars"])
-                else:
-                    self.factors[key].value = value
-
     def __str__(self):
         return "\n".join(f"{k}: {v}" for k, v in self.factors.items())
 
@@ -111,6 +107,55 @@ class EnvironmentState:
         """Reset all factors to their initial values"""
         for factor in self.factors.values():
             factor.reset()
+
+    def add_continuous_factor(self, name: str, initial_value: float, description: str = "", relationships: Dict = None) -> ContinuousFactor:
+        """Manually add a continuous factor to the state."""
+        factor = ContinuousFactor(
+            name=name,
+            initial_value=initial_value,
+            description=description,
+            relationships=relationships
+        )
+        self.factors[name] = factor
+        return factor
+
+    def add_categorical_factor(self, name: str, initial_value: str, possible_values: list, 
+                             description: str = "", relationships: Dict = None) -> CategoricalFactor:
+        """Manually add a categorical factor to the state."""
+        factor = CategoricalFactor(
+            name=name,
+            initial_value=initial_value,
+            description=description,
+            relationships=relationships,
+            possible_values=possible_values
+        )
+        self.factors[name] = factor
+        return factor
+
+    def add_discrete_factor(self, name: str, initial_value: int, description: str = "", 
+                          relationships: Dict = None) -> DiscreteFactor:
+        """Manually add a discrete factor to the state."""
+        factor = DiscreteFactor(
+            name=name,
+            initial_value=initial_value,
+            description=description,
+            relationships=relationships
+        )
+        self.factors[name] = factor
+        return factor
+
+    def add_bayesian_factor(self, name: str, explanatory_vars: Dict = None, theta_prior: Dict = None,
+                           variance: float = 1.0, description: str = "") -> BayesianLinearFactor:
+        """Manually add a Bayesian linear factor to the state."""
+        factor = BayesianLinearFactor(
+            name=name,
+            explanatory_vars=explanatory_vars,
+            theta_prior=theta_prior,
+            variance=variance,
+            description=description
+        )
+        self.factors[name] = factor
+        return factor
 
 
 # Example usage:
