@@ -9,6 +9,12 @@ import json
 from typing import Dict, Any, List, Optional, Union
 import numpy as np
 from pathlib import Path
+import tensorflow as tf
+import tensorflow_probability as tfp
+
+# TFP shortcuts
+tfd = tfp.distributions
+tfb = tfp.bijectors
 
 # Import directly from latent_variables
 from .latent_variables import ContinuousLatentVariable, CategoricalLatentVariable, DiscreteLatentVariable, HierarchicalLatentVariable
@@ -154,9 +160,10 @@ class BayesianState:
     # Methods for adding different types of latent variables
     
     def add_continuous_latent(self, name: str, mean: float, uncertainty: float = 1.0, 
-                            description: str = "", relationships: Dict = None) -> ContinuousLatentVariable:
+                            description: str = "", relationships: Dict = None,
+                            lower_bound: Optional[float] = None, upper_bound: Optional[float] = None) -> ContinuousLatentVariable:
         """
-        Add a continuous latent variable to the state.
+        Add a continuous latent variable to the state with TensorFlow distribution.
         
         In the Bayesian brain hypothesis, continuous latent variables represent
         hidden causes that can take any real value, like temperature or intensity.
@@ -167,24 +174,67 @@ class BayesianState:
             uncertainty: Prior uncertainty (standard deviation)
             description: Description of what this latent variable represents
             relationships: Dictionary of relationships with other variables
+            lower_bound: Optional lower bound constraint
+            upper_bound: Optional upper bound constraint
             
         Returns:
             The created continuous latent variable
         """
+        # Create TensorFlow distribution directly
+        tf_dist = None
+        if lower_bound is not None and upper_bound is not None:
+            # Truncated normal for bounded variables
+            tf_dist = tfd.TruncatedNormal(
+                loc=float(mean), 
+                scale=float(uncertainty),
+                low=float(lower_bound),
+                high=float(upper_bound)
+            )
+        elif lower_bound is not None:
+            # Transformed distribution for lower-bounded variables
+            shift = float(lower_bound)
+            tf_dist = tfd.TransformedDistribution(
+                distribution=tfd.Normal(loc=float(mean)-shift, scale=float(uncertainty)),
+                bijector=tfb.Shift(shift=shift) @ tfb.Softplus()
+            )
+        elif upper_bound is not None:
+            # Transformed distribution for upper-bounded variables
+            shift = float(upper_bound)
+            tf_dist = tfd.TransformedDistribution(
+                distribution=tfd.Normal(loc=shift-float(mean), scale=float(uncertainty)),
+                bijector=tfb.Shift(shift=shift) @ tfb.Scale(-1.0) @ tfb.Softplus()
+            )
+        else:
+            # Unconstrained normal distribution
+            tf_dist = tfd.Normal(loc=float(mean), scale=float(uncertainty))
+            
+        # Create latent variable
         latent = ContinuousLatentVariable(
             name=name,
             initial_value=mean,
             uncertainty=uncertainty,
             description=description,
-            relationships=relationships
+            relationships=relationships,
+            tf_distribution=tf_dist  # Attach TF distribution
         )
+        
+        # Store constraints if provided
+        if lower_bound is not None or upper_bound is not None:
+            constraints = {}
+            if lower_bound is not None:
+                constraints["lower"] = lower_bound
+            if upper_bound is not None:
+                constraints["upper"] = upper_bound
+            latent.constraints = constraints
+            
         self.factors[name] = latent
         return latent
 
     def add_categorical_latent(self, name: str, initial_value: str, possible_values: List[str], 
-                             description: str = "", relationships: Dict = None) -> CategoricalLatentVariable:
+                             description: str = "", relationships: Dict = None,
+                             probs: Optional[List[float]] = None) -> CategoricalLatentVariable:
         """
-        Add a categorical latent variable to the state.
+        Add a categorical latent variable to the state with TensorFlow distribution.
         
         In the Bayesian brain hypothesis, categorical latent variables represent
         hidden causes that can take one of several discrete values, like "sunny" or "rainy".
@@ -195,24 +245,38 @@ class BayesianState:
             possible_values: List of all possible values
             description: Description of what this latent variable represents
             relationships: Dictionary of relationships with other variables
+            probs: Optional probability for each category (should sum to 1)
             
         Returns:
             The created categorical latent variable
         """
+        # Create probability distribution
+        if probs is None:
+            # Equal probability for all categories
+            probs = [1.0 / len(possible_values)] * len(possible_values)
+            
+        # Convert probs to tensor and create TF distribution
+        probs_tensor = tf.constant(probs, dtype=tf.float32)
+        tf_dist = tfd.Categorical(probs=probs_tensor)
+        
         latent = CategoricalLatentVariable(
             name=name,
             initial_value=initial_value,
             description=description,
             relationships=relationships,
-            possible_values=possible_values
+            possible_values=possible_values,
+            tf_distribution=tf_dist,  # Attach TF distribution
+            probabilities=probs
         )
         self.factors[name] = latent
         return latent
 
     def add_discrete_latent(self, name: str, initial_value: int, description: str = "", 
-                          relationships: Dict = None) -> DiscreteLatentVariable:
+                          relationships: Dict = None, min_value: int = 0,
+                          max_value: Optional[int] = None,
+                          rate: Optional[float] = None) -> DiscreteLatentVariable:
         """
-        Add a discrete latent variable to the state.
+        Add a discrete latent variable to the state with TensorFlow distribution.
         
         In the Bayesian brain hypothesis, discrete latent variables represent
         hidden causes that can take integer values, like counts or indices.
@@ -222,15 +286,49 @@ class BayesianState:
             initial_value: Initial (most probable) value
             description: Description of what this latent variable represents
             relationships: Dictionary of relationships with other variables
+            min_value: Minimum possible value
+            max_value: Maximum possible value (if None, unbounded above)
+            rate: Rate parameter for Poisson distribution (if unbounded)
             
         Returns:
             The created discrete latent variable
         """
+        # Create TensorFlow distribution
+        tf_dist = None
+        
+        if max_value is None:
+            # Poisson distribution for unbounded discrete values
+            if rate is None:
+                rate = float(initial_value)
+            tf_dist = tfd.Poisson(rate=rate)
+            
+            constraints = {"lower": min_value}
+            distribution_params = {"rate": rate}
+        else:
+            # Categorical distribution for bounded discrete values
+            num_values = max_value - min_value + 1
+            categories = list(range(min_value, max_value + 1))
+            
+            # Create probabilities centered on initial value
+            probs = [0.0] * num_values
+            index = categories.index(initial_value)
+            probs[index] = 1.0
+            
+            # Convert to tensor
+            probs_tensor = tf.constant(probs, dtype=tf.float32)
+            tf_dist = tfd.Categorical(probs=probs_tensor)
+            
+            distribution_params = {"probs": probs}
+            constraints = {"lower": min_value, "upper": max_value}
+            
         latent = DiscreteLatentVariable(
             name=name,
             initial_value=initial_value,
             description=description,
-            relationships=relationships
+            relationships=relationships,
+            tf_distribution=tf_dist,  # Attach TF distribution
+            distribution_params=distribution_params,
+            constraints=constraints
         )
         self.factors[name] = latent
         return latent
@@ -305,67 +403,6 @@ class BayesianState:
                     self.factors[child].relationships["depends_on"].append(parent)
 
     # Additional methods for hierarchical generative models can be added here
-    
-    def create_ad_budget_state(self, num_ads: int = 2, num_days: int = 3):
-        """
-        Create a standard ad budget state with appropriate latent variables.
-        
-        This is a convenience method for creating a standard set of latent variables
-        for ad budget allocation in a hierarchical generative model.
-        
-        Args:
-            num_ads: Number of ads
-            num_days: Number of days
-        """
-        # Create conversion rate latent variables (phi) for each ad
-        for i in range(num_ads):
-            self.add_continuous_latent(
-                name=f"phi_ad{i+1}",
-                mean=0.05,  # 5% conversion rate
-                uncertainty=0.01,
-                description=f"Conversion rate for ad {i+1}"
-            )
-        
-        # Create cost per click latent variables (c) for each ad
-        for i in range(num_ads):
-            self.add_continuous_latent(
-                name=f"c_ad{i+1}",
-                mean=0.7,  # $0.70 per click
-                uncertainty=0.1,
-                description=f"Cost per click for ad {i+1}"
-            )
-        
-        # Create day effect latent variables (delta) for each day
-        for i in range(num_days):
-            self.add_continuous_latent(
-                name=f"delta_day{i+1}",
-                mean=1.0,  # Multiplicative effect
-                uncertainty=0.3,
-                description=f"Day effect multiplier for day {i+1}"
-            )
-        
-        # Create observation noise latent variable (sigma)
-        self.add_continuous_latent(
-            name="sigma",
-            mean=1.0,
-            uncertainty=0.5,
-            description="Observation noise"
-        )
-        
-        # Create global latent variables
-        self.add_continuous_latent(
-            name="roi_target",
-            mean=1.5,
-            uncertainty=0.2,
-            description="Target ROI for campaigns"
-        )
-        
-        self.add_continuous_latent(
-            name="risk_tolerance",
-            mean=0.7,
-            uncertainty=0.1,
-            description="Risk tolerance (0-1)"
-        )
 
 
 # For backward compatibility with any code that directly imports EnvironmentState

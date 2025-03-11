@@ -8,6 +8,12 @@ These latent variables represent unobserved causes that the brain infers from se
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Union
 import numpy as np
+import tensorflow as tf
+import tensorflow_probability as tfp
+
+# TFP shortcuts
+tfd = tfp.distributions
+tfb = tfp.bijectors
 
 class LatentVariable(ABC):
     """
@@ -16,7 +22,8 @@ class LatentVariable(ABC):
     In the Bayesian brain hypothesis, latent variables represent
     hidden causes that the brain infers from sensory observations.
     """
-    def __init__(self, name: str, initial_value: Any = None, description: str = "", relationships: Dict = None):
+    def __init__(self, name: str, initial_value: Any = None, description: str = "", 
+                 relationships: Dict = None, tf_distribution = None):
         """
         Initialize a latent variable.
         
@@ -25,12 +32,14 @@ class LatentVariable(ABC):
             initial_value: Initial value (prior mean)
             description: Description of what this variable represents
             relationships: Dictionary of relationships with other variables
+            tf_distribution: TensorFlow probability distribution
         """
         self.name = name
         self.initial_value = initial_value
         self.value = initial_value  # Current value (posterior mean)
         self.description = description
         self.relationships = relationships or {}  # Store hierarchical relationships
+        self.tf_distribution = tf_distribution  # Store TensorFlow distribution
 
     def __str__(self):
         return f"{self.value}"
@@ -51,7 +60,8 @@ class ContinuousLatentVariable(LatentVariable):
     quantities like temperature, brightness, or other real-valued hidden causes.
     """
     def __init__(self, name: str, initial_value: float, uncertainty: float = 1.0, 
-                 description: str = "", relationships: Dict = None):
+                 description: str = "", relationships: Dict = None, 
+                 tf_distribution = None, constraints = None):
         """
         Initialize a continuous latent variable.
         
@@ -61,9 +71,12 @@ class ContinuousLatentVariable(LatentVariable):
             uncertainty: Initial uncertainty (prior standard deviation)
             description: Description of what this variable represents
             relationships: Dictionary of relationships with other variables
+            tf_distribution: TensorFlow probability distribution
+            constraints: Constraints on the variable (e.g., bounds)
         """
-        super().__init__(name, initial_value, description, relationships)
+        super().__init__(name, initial_value, description, relationships, tf_distribution)
         self._uncertainty = uncertainty  # Prior/posterior uncertainty (std dev)
+        self.constraints = constraints or {}
         
     @property
     def uncertainty(self):
@@ -101,7 +114,12 @@ class ContinuousLatentVariable(LatentVariable):
         Returns:
             Single value or array of samples from prior distribution
         """
-        # Assume Gaussian prior for continuous variables
+        if self.tf_distribution:
+            # Use TensorFlow distribution if available
+            samples = self.tf_distribution.sample(n_samples).numpy()
+            return samples[0] if n_samples == 1 else samples
+            
+        # Fallback to numpy for Gaussian prior
         samples = np.random.normal(self.initial_value, self._uncertainty, size=n_samples)
         return samples[0] if n_samples == 1 else samples
         
@@ -143,7 +161,8 @@ class CategoricalLatentVariable(LatentVariable):
     """
     def __init__(self, name: str, initial_value: str, possible_values: List[str], 
                  prior_probs: Optional[List[float]] = None,
-                 description: str = "", relationships: Dict = None):
+                 description: str = "", relationships: Dict = None,
+                 tf_distribution = None, probabilities = None):
         """
         Initialize a categorical latent variable.
         
@@ -154,16 +173,23 @@ class CategoricalLatentVariable(LatentVariable):
             prior_probs: List of prior probabilities for each value (default uniform)
             description: Description of what this variable represents
             relationships: Dictionary of relationships with other variables
+            tf_distribution: TensorFlow probability distribution
+            probabilities: Probabilities for each category (alternative to prior_probs)
         """
-        super().__init__(name, initial_value, description, relationships)
+        super().__init__(name, initial_value, description, relationships, tf_distribution)
         self.possible_values = possible_values
         
         # Ensure initial value is in possible values
         if initial_value not in self.possible_values:
             self.possible_values.append(initial_value)
-            
+        
+        # Use probabilities if provided (from TF distribution creation)
+        if probabilities is not None:
+            if len(probabilities) != len(possible_values):
+                raise ValueError("probabilities must have same length as possible_values")
+            self.prior_probs = {val: prob for val, prob in zip(possible_values, probabilities)}
         # Set up prior probabilities (default to uniform if not provided)
-        if prior_probs is None:
+        elif prior_probs is None:
             self.prior_probs = {val: 1.0/len(self.possible_values) for val in self.possible_values}
         else:
             if len(prior_probs) != len(possible_values):
@@ -206,6 +232,17 @@ class CategoricalLatentVariable(LatentVariable):
         Returns:
             Single value or list of samples from prior distribution
         """
+        if self.tf_distribution:
+            # Use TensorFlow distribution if available
+            samples = self.tf_distribution.sample(n_samples).numpy()
+            
+            # Convert indices to category names
+            if n_samples == 1:
+                return self.possible_values[int(samples)]
+            else:
+                return [self.possible_values[int(idx)] for idx in samples]
+            
+        # Fallback to numpy
         values = list(self.prior_probs.keys())
         probs = list(self.prior_probs.values())
         
@@ -248,56 +285,45 @@ class DiscreteLatentVariable(LatentVariable):
     A latent variable that can take discrete integer values.
     
     In the Bayesian brain hypothesis, discrete latent variables might represent
-    counts, indices, or other integer-valued hidden causes.
+    counts or indices of hidden causes, like number of objects.
     """
-    def __init__(self, name: str, initial_value: int, min_value: Optional[int] = None, 
-                 max_value: Optional[int] = None, description: str = "", relationships: Dict = None):
+    def __init__(self, name: str, initial_value: int, description: str = "", 
+                 relationships: Dict = None, tf_distribution = None,
+                 distribution_params = None, constraints = None):
         """
         Initialize a discrete latent variable.
         
         Args:
             name: Name of the latent variable
             initial_value: Initial value (prior mean or mode)
-            min_value: Minimum possible value (default: None = no minimum)
-            max_value: Maximum possible value (default: None = no maximum)
             description: Description of what this variable represents
             relationships: Dictionary of relationships with other variables
+            tf_distribution: TensorFlow probability distribution
+            distribution_params: Parameters for the distribution (e.g., rate for Poisson)
+            constraints: Constraints on the variable (e.g., min/max values)
         """
-        super().__init__(name, initial_value, description, relationships)
-        self.min_value = min_value
-        self.max_value = max_value
-        self._uncertainty = 1.0  # Default uncertainty for Poisson/Negative Binomial
+        super().__init__(name, initial_value, description, relationships, tf_distribution)
+        self.distribution_params = distribution_params or {}
+        self.constraints = constraints or {}
         
-    @property
-    def uncertainty(self):
-        """Get the current uncertainty parameter"""
-        return self._uncertainty
-        
-    def update_uncertainty(self, new_uncertainty: float):
-        """Update the uncertainty parameter"""
-        self._uncertainty = max(0.0, new_uncertainty)
-        
-    def update(self, new_value: int, new_uncertainty: Optional[float] = None) -> None:
+        # For Poisson distribution, parameter is the rate (mean)
+        if 'rate' not in self.distribution_params and not tf_distribution:
+            self.distribution_params['rate'] = float(initial_value)
+
+    def update(self, new_value: int, new_params: Optional[Dict] = None) -> None:
         """
-        Update the value and optionally the uncertainty.
+        Update the value and optionally the distribution parameters.
         
         Args:
             new_value: New value (posterior mean or mode)
-            new_uncertainty: New uncertainty parameter, if None keeps current
+            new_params: New distribution parameters, if None keeps current
         """
-        if not isinstance(new_value, int):
+        if not isinstance(new_value, (int, np.integer)):
             raise ValueError("Expected an integer value for DiscreteLatentVariable.")
-            
-        # Check boundaries if specified
-        if self.min_value is not None and new_value < self.min_value:
-            raise ValueError(f"Value {new_value} below minimum {self.min_value}")
-        if self.max_value is not None and new_value > self.max_value:
-            raise ValueError(f"Value {new_value} above maximum {self.max_value}")
-            
         self.value = new_value
         
-        if new_uncertainty is not None:
-            self.update_uncertainty(new_uncertainty)
+        if new_params is not None:
+            self.distribution_params.update(new_params)
             
     def sample_prior(self, n_samples: int = 1) -> Union[int, np.ndarray]:
         """
@@ -309,30 +335,30 @@ class DiscreteLatentVariable(LatentVariable):
         Returns:
             Single value or array of samples from prior distribution
         """
-        # Assume Poisson distribution for unbounded discrete variables
-        # or Binomial for bounded ones
-        if self.min_value is None and self.max_value is None:
-            # Poisson distribution centered at initial value
-            samples = np.random.poisson(self.initial_value, size=n_samples)
-        else:
-            # Bounded case: use Binomial with appropriate parameters
-            if self.min_value is None:
-                n = self.max_value
-                p = self.initial_value / n
-            elif self.max_value is None:
-                # Hard to model with standard distributions, default to Poisson
-                samples = np.random.poisson(self.initial_value - self.min_value, size=n_samples)
-                samples = samples + self.min_value
-                return samples[0] if n_samples == 1 else samples
-            else:
-                n = self.max_value - self.min_value
-                p = (self.initial_value - self.min_value) / n
+        if self.tf_distribution:
+            # Use TensorFlow distribution if available
+            samples = self.tf_distribution.sample(n_samples).numpy()
             
-            samples = np.random.binomial(n, p, size=n_samples)
-            if self.min_value is not None:
-                samples = samples + self.min_value
+            if hasattr(samples, '__len__') and n_samples == 1:
+                return int(samples[0])
+            elif n_samples == 1:
+                return int(samples)
                 
-        return samples[0] if n_samples == 1 else samples
+            # Convert to integers if needed
+            return samples.astype(int)
+            
+        # Fallback to numpy for Poisson/categorical
+        if 'categories' in self.distribution_params:
+            # For categorical-like discrete 
+            categories = self.distribution_params['categories']
+            probs = self.distribution_params.get('probs', [1.0/len(categories)] * len(categories))
+            samples = np.random.choice(categories, size=n_samples, p=probs)
+        else:
+            # For Poisson
+            rate = self.distribution_params.get('rate', float(self.initial_value))
+            samples = np.random.poisson(rate, size=n_samples)
+            
+        return int(samples[0]) if n_samples == 1 else samples
 
 
 class HierarchicalLatentVariable(ContinuousLatentVariable):

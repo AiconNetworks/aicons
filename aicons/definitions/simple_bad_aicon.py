@@ -6,6 +6,12 @@ This module provides a clean, simple implementation of BadAIcon that properly us
 
 from typing import Dict, List, Any, Optional
 import numpy as np
+import tensorflow as tf
+import tensorflow_probability as tfp
+
+# TFP shortcuts
+tfd = tfp.distributions
+tfb = tfp.bijectors
 
 # Fix imports - remove action_space imports
 from aicons.bayesbrainGPT.bayes_brain import BayesBrain
@@ -39,24 +45,54 @@ class SimpleBadAIcon:
                               lower_bound: Optional[float] = None, upper_bound: Optional[float] = None,
                               description: str = ""):
         """
-        Add a continuous factor with proper structure for TensorFlow.
+        Add a continuous factor with TensorFlow distribution.
         
         Args:
             name: Factor name
-            value: Initial value
+            value: Initial value (mean)
             uncertainty: Standard deviation
             lower_bound: Optional lower bound
             upper_bound: Optional upper bound
             description: Optional description
         """
-        print(f"Creating continuous factor: {name}")
+        print(f"Creating continuous factor with TensorFlow: {name}")
         
+        # Create constraints dictionary
         constraints = {}
         if lower_bound is not None:
             constraints["lower"] = lower_bound
         if upper_bound is not None:
             constraints["upper"] = upper_bound
             
+        # Create TensorFlow distribution directly
+        tf_dist = None
+        if lower_bound is not None and upper_bound is not None:
+            # Truncated normal for bounded variables
+            tf_dist = tfd.TruncatedNormal(
+                loc=float(value), 
+                scale=float(uncertainty),
+                low=float(lower_bound),
+                high=float(upper_bound)
+            )
+        elif lower_bound is not None:
+            # Transformed distribution for lower-bounded variables
+            shift = float(lower_bound)
+            tf_dist = tfd.TransformedDistribution(
+                distribution=tfd.Normal(loc=float(value)-shift, scale=float(uncertainty)),
+                bijector=tfb.Shift(shift=shift) @ tfb.Softplus()
+            )
+        elif upper_bound is not None:
+            # Transformed distribution for upper-bounded variables
+            shift = float(upper_bound)
+            tf_dist = tfd.TransformedDistribution(
+                distribution=tfd.Normal(loc=shift-float(value), scale=float(uncertainty)),
+                bijector=tfb.Shift(shift=shift) @ tfb.Scale(-1.0) @ tfb.Softplus()
+            )
+        else:
+            # Unconstrained normal distribution
+            tf_dist = tfd.Normal(loc=float(value), scale=float(uncertainty))
+        
+        # Package factor with TensorFlow distribution
         factor = {
             "type": "continuous",
             "distribution": "normal",
@@ -64,27 +100,23 @@ class SimpleBadAIcon:
             "shape": [],
             "value": float(value),
             "constraints": constraints if constraints else None,
-            "description": description or f"Continuous factor: {name}"
+            "description": description or f"Continuous factor: {name}",
+            "tf_distribution": tf_dist  # Store the TF distribution directly
         }
         
         # Update the brain's state with this factor
-        print(f"Getting current state factors")
         current_state = self.brain.get_state_factors() or {}
-        
-        print(f"Adding factor {name} to state")
         current_state[name] = factor
-        
-        print(f"Setting updated state factors in brain")
         self.brain.set_state_factors(current_state)
         
-        print(f"Added continuous factor: {name}")
+        print(f"Added continuous factor with TensorFlow distribution: {name}")
         return factor
     
     def add_factor_categorical(self, name: str, value: str, categories: List[str], 
                                probs: Optional[List[float]] = None,
                                description: str = ""):
         """
-        Add a categorical factor with proper structure for TensorFlow.
+        Add a categorical factor with TensorFlow distribution.
         
         Args:
             name: Factor name
@@ -93,7 +125,7 @@ class SimpleBadAIcon:
             probs: Optional probabilities for each category (should sum to 1)
             description: Optional description
         """
-        print(f"Creating categorical factor: {name}")
+        print(f"Creating categorical factor with TensorFlow: {name}")
         
         if value not in categories:
             raise ValueError(f"Value '{value}' not in provided categories: {categories}")
@@ -102,13 +134,20 @@ class SimpleBadAIcon:
             # Equal probability for all categories
             probs = [1.0 / len(categories)] * len(categories)
         
+        # Convert probs to tensor
+        probs_tensor = tf.constant(probs, dtype=tf.float32)
+        
+        # Create TensorFlow categorical distribution
+        tf_dist = tfd.Categorical(probs=probs_tensor)
+        
         factor = {
             "type": "categorical",
             "distribution": "categorical",
             "params": {"probs": probs},
             "categories": categories,
             "value": value,
-            "description": description or f"Categorical factor: {name}"
+            "description": description or f"Categorical factor: {name}",
+            "tf_distribution": tf_dist  # Store the TF distribution directly
         }
         
         # Update the brain's state with this factor
@@ -116,14 +155,14 @@ class SimpleBadAIcon:
         current_state[name] = factor
         self.brain.set_state_factors(current_state)
         
-        print(f"Added categorical factor: {name}")
+        print(f"Added categorical factor with TensorFlow distribution: {name}")
         return factor
     
     def add_factor_discrete(self, name: str, value: int, min_value: int = 0, 
                            max_value: Optional[int] = None,
                            description: str = ""):
         """
-        Add a discrete integer factor with proper structure for TensorFlow.
+        Add a discrete integer factor with TensorFlow distribution.
         
         Args:
             name: Factor name
@@ -132,17 +171,23 @@ class SimpleBadAIcon:
             max_value: Maximum possible value
             description: Optional description
         """
-        print(f"Creating discrete factor: {name}")
+        print(f"Creating discrete factor with TensorFlow: {name}")
+        
+        # Create TensorFlow distribution
+        tf_dist = None
         
         if max_value is None:
             # Poisson distribution for unbounded discrete values
+            tf_dist = tfd.Poisson(rate=float(value))
+            
             factor = {
                 "type": "discrete",
                 "distribution": "poisson",
                 "params": {"rate": float(value)},
                 "value": int(value),
                 "constraints": {"lower": min_value},
-                "description": description or f"Discrete factor: {name}"
+                "description": description or f"Discrete factor: {name}",
+                "tf_distribution": tf_dist
             }
         else:
             # Categorical distribution for bounded discrete values
@@ -153,13 +198,18 @@ class SimpleBadAIcon:
             probs = [0.0] * num_values
             probs[index] = 1.0
             
+            # Convert probs to tensor
+            probs_tensor = tf.constant(probs, dtype=tf.float32)
+            tf_dist = tfd.Categorical(probs=probs_tensor)
+            
             factor = {
                 "type": "discrete",
                 "distribution": "categorical",
                 "params": {"probs": probs},
                 "categories": categories,
                 "value": int(value),
-                "description": description or f"Discrete factor: {name}"
+                "description": description or f"Discrete factor: {name}",
+                "tf_distribution": tf_dist
             }
         
         # Update the brain's state with this factor
@@ -167,7 +217,7 @@ class SimpleBadAIcon:
         current_state[name] = factor
         self.brain.set_state_factors(current_state)
         
-        print(f"Added discrete factor: {name}")
+        print(f"Added discrete factor with TensorFlow distribution: {name}")
         return factor
     
     def configure_state_factors(self, state_factors: Dict[str, Any] = None):
@@ -199,14 +249,79 @@ class SimpleBadAIcon:
         """
         self.brain.set_posterior_samples(posterior_samples)
     
-    def add_sensor(self, sensor_function):
+    def add_sensor(self, name, sensor_function=None):
         """
-        Add a sensor function to the BayesBrain.
+        Add a sensor to collect observations for the AIcon.
         
         Args:
-            sensor_function: A callable that takes an environment and returns sensor data
+            name: Name of the sensor
+            sensor_function: Function that returns observations
+                (mapping factor names to values or (value, reliability) tuples)
+        
+        Returns:
+            The sensor function for convenience
         """
-        self.brain.add_sensor(sensor_function)
+        if sensor_function is None:
+            # Create a default sensor function that returns no data
+            sensor_function = lambda env=None: {}
+            
+        # Initialize perception if not already done
+        if not hasattr(self.brain, 'perception'):
+            from aicons.bayesbrainGPT.perception.perception import BayesianPerception
+            self.brain.perception = BayesianPerception(self.brain)
+        
+        # Register the sensor with perception
+        self.brain.perception.register_sensor(name, sensor_function)
+        return sensor_function
+    
+    def update_from_sensor(self, sensor_name, environment=None):
+        """
+        Update beliefs based on data from a specific sensor.
+        
+        Args:
+            sensor_name: Name of the sensor to use
+            environment: Optional environment data to pass to the sensor
+            
+        Returns:
+            True if update was successful
+        """
+        if not hasattr(self.brain, 'perception'):
+            from aicons.bayesbrainGPT.perception.perception import BayesianPerception
+            self.brain.perception = BayesianPerception(self.brain)
+            print(f"No sensors registered yet. Add sensors with add_sensor() first.")
+            return False
+        
+        return self.brain.perception.update_from_sensor(sensor_name, environment)
+    
+    def update_from_all_sensors(self, environment=None):
+        """
+        Update beliefs based on data from all sensors.
+        
+        Args:
+            environment: Optional environment data to pass to sensors
+            
+        Returns:
+            True if update was successful
+        """
+        if not hasattr(self.brain, 'perception'):
+            from aicons.bayesbrainGPT.perception.perception import BayesianPerception
+            self.brain.perception = BayesianPerception(self.brain)
+            print(f"No sensors registered yet. Add sensors with add_sensor() first.")
+            return False
+        
+        return self.brain.perception.update_all(environment)
+    
+    def get_posterior_samples(self):
+        """
+        Get the current posterior samples from the last update.
+        
+        Returns:
+            Dictionary mapping factor names to posterior samples
+        """
+        if not hasattr(self.brain, 'perception'):
+            return {}
+        
+        return self.brain.perception.posterior_samples
     
     def sample_allocation(self):
         """
