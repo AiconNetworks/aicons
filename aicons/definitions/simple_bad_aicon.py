@@ -33,6 +33,147 @@ class SimpleBadAIcon:
         
         # Initialize other attributes
         self.campaigns = {}
+        
+        # DEBUG: Print attributes
+        print("SimpleBadAIcon.__init__ completed. Attributes:")
+        for attr in dir(self):
+            if not attr.startswith('__'):
+                print(f"  {attr}: {type(getattr(self, attr))}")
+    
+    def add_factor_continuous(self, name: str, value: float, uncertainty: float = 0.1, 
+                              lower_bound: Optional[float] = None, upper_bound: Optional[float] = None,
+                              description: str = ""):
+        """
+        Add a continuous factor with proper structure for TensorFlow.
+        
+        Args:
+            name: Factor name
+            value: Initial value
+            uncertainty: Standard deviation
+            lower_bound: Optional lower bound
+            upper_bound: Optional upper bound
+            description: Optional description
+        """
+        print(f"Creating continuous factor: {name}")
+        
+        constraints = {}
+        if lower_bound is not None:
+            constraints["lower"] = lower_bound
+        if upper_bound is not None:
+            constraints["upper"] = upper_bound
+            
+        factor = {
+            "type": "continuous",
+            "distribution": "normal",
+            "params": {"loc": float(value), "scale": float(uncertainty)},
+            "shape": [],
+            "value": float(value),
+            "constraints": constraints if constraints else None,
+            "description": description or f"Continuous factor: {name}"
+        }
+        
+        # Update the brain's state with this factor
+        print(f"Getting current state factors")
+        current_state = self.brain.get_state_factors() or {}
+        
+        print(f"Adding factor {name} to state")
+        current_state[name] = factor
+        
+        print(f"Setting updated state factors in brain")
+        self.brain.set_state_factors(current_state)
+        
+        print(f"Added continuous factor: {name}")
+        return factor
+    
+    def add_factor_categorical(self, name: str, value: str, categories: List[str], 
+                               probs: Optional[List[float]] = None,
+                               description: str = ""):
+        """
+        Add a categorical factor with proper structure for TensorFlow.
+        
+        Args:
+            name: Factor name
+            value: Current value (must be in categories)
+            categories: List of possible categories
+            probs: Optional probabilities for each category (should sum to 1)
+            description: Optional description
+        """
+        print(f"Creating categorical factor: {name}")
+        
+        if value not in categories:
+            raise ValueError(f"Value '{value}' not in provided categories: {categories}")
+        
+        if probs is None:
+            # Equal probability for all categories
+            probs = [1.0 / len(categories)] * len(categories)
+        
+        factor = {
+            "type": "categorical",
+            "distribution": "categorical",
+            "params": {"probs": probs},
+            "categories": categories,
+            "value": value,
+            "description": description or f"Categorical factor: {name}"
+        }
+        
+        # Update the brain's state with this factor
+        current_state = self.brain.get_state_factors() or {}
+        current_state[name] = factor
+        self.brain.set_state_factors(current_state)
+        
+        print(f"Added categorical factor: {name}")
+        return factor
+    
+    def add_factor_discrete(self, name: str, value: int, min_value: int = 0, 
+                           max_value: Optional[int] = None,
+                           description: str = ""):
+        """
+        Add a discrete integer factor with proper structure for TensorFlow.
+        
+        Args:
+            name: Factor name
+            value: Current integer value
+            min_value: Minimum possible value
+            max_value: Maximum possible value
+            description: Optional description
+        """
+        print(f"Creating discrete factor: {name}")
+        
+        if max_value is None:
+            # Poisson distribution for unbounded discrete values
+            factor = {
+                "type": "discrete",
+                "distribution": "poisson",
+                "params": {"rate": float(value)},
+                "value": int(value),
+                "constraints": {"lower": min_value},
+                "description": description or f"Discrete factor: {name}"
+            }
+        else:
+            # Categorical distribution for bounded discrete values
+            num_values = max_value - min_value + 1
+            categories = list(range(min_value, max_value + 1))
+            index = categories.index(value)
+            
+            probs = [0.0] * num_values
+            probs[index] = 1.0
+            
+            factor = {
+                "type": "discrete",
+                "distribution": "categorical",
+                "params": {"probs": probs},
+                "categories": categories,
+                "value": int(value),
+                "description": description or f"Discrete factor: {name}"
+            }
+        
+        # Update the brain's state with this factor
+        current_state = self.brain.get_state_factors() or {}
+        current_state[name] = factor
+        self.brain.set_state_factors(current_state)
+        
+        print(f"Added discrete factor: {name}")
+        return factor
     
     def configure_state_factors(self, state_factors: Dict[str, Any] = None):
         """
