@@ -15,28 +15,31 @@ from aicons.bayesbrainGPT.decision_making.action_space import (
     create_budget_allocation_space
 )
 
+# Import the BayesBrain class
+from aicons.bayesbrainGPT.bayes_brain import BayesBrain
+
 # Base AIcon class (Abstract Base Class)
 class BaseAIcon(ABC):
-    """Base abstract class for AI agents (AIcons)"""
+    """Base class for all AI Icons (AIcons)"""
     
     def __init__(self, name: str, aicon_type: str, capabilities: List[str]):
         self.name = name
         self.type = aicon_type
         self.capabilities = capabilities
-        
+    
     @abstractmethod
     def initialize(self) -> None:
-        """Initialize the AIcon with necessary setup"""
+        """Initialize the AIcon"""
         pass
-        
+    
     @abstractmethod
     def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         """Process input data and return results"""
         pass
-        
+    
     @abstractmethod
     def update_state(self, state_data: Dict[str, Any]) -> None:
-        """Update the internal state of the AIcon"""
+        """Update internal state with new data"""
         pass
 
 @dataclass
@@ -61,18 +64,13 @@ class BadAIcon(BaseAIcon):
         super().__init__(name, "bad", capabilities)
         self.campaigns: Dict[str, Campaign] = {}
         self.meta_campaign: Optional[Campaign] = None
-        self.state = None  # We'll skip state initialization for now
-        self.posterior_samples = {
-            "phi": None,  # Conversion rate samples
-            "c": None,    # Cost per click samples
-            "delta": None # Day effect samples
-        }
-        self.num_posterior_samples = 1000  # Number of samples to maintain
         self.budget_increment = 100.0  # Budget allocation increment in dollars
-        self.action_space = None  # Will be initialized in initialize()
+        
+        # Initialize an empty BayesBrain
+        self.brain = BayesBrain()
     
     def initialize(self) -> None:
-        """Initialize the BAD AIcon with a meta campaign and action space"""
+        """Initialize the BAD AIcon with a meta campaign and empty BayesBrain"""
         # Create the meta campaign that will manage budget for all campaigns
         self.meta_campaign = Campaign(
             id="meta_campaign_001",
@@ -88,14 +86,62 @@ class BadAIcon(BaseAIcon):
             }
         )
         
-        # Skip state initialization completely
-        # self.state = create_state_from_config(self.bayes_brain_config)
+        # Initialize state factors
+        self._initialize_state_factors()
         
-        # Initialize posterior samples with reasonable priors
+        # Initialize posterior samples
         self._initialize_posterior_samples()
         
-        # Initialize the action space for budget allocation
+        # Initialize the action space
         self._initialize_action_space()
+        
+        # Set the utility function
+        self._initialize_utility_function()
+        
+        # Add sensors
+        self._initialize_sensors()
+        
+        print(f"Initialized BadAIcon '{self.name}' with {len(self.campaigns)} campaigns")
+    
+    def _initialize_state_factors(self) -> None:
+        """Initialize state factors for the BayesBrain"""
+        state_factors = {
+            "roi": {
+                "type": "continuous",
+                "value": 1.0,
+                "description": "Return on Investment"
+            },
+            "ctr": {
+                "type": "continuous",
+                "value": 0.02,
+                "description": "Click-through Rate"
+            },
+            "cpc": {
+                "type": "continuous",
+                "value": 1.0,
+                "description": "Cost Per Click"
+            },
+            "conversion_rate": {
+                "type": "continuous",
+                "value": 0.05,
+                "description": "Conversion Rate"
+            }
+        }
+        
+        # Set state factors in the BayesBrain
+        self.brain.set_state_factors(state_factors)
+    
+    def _initialize_sensors(self) -> None:
+        """Initialize sensors for the BayesBrain"""
+        # Define a sensor function to collect campaign performance data
+        def campaign_performance_sensor(environment):
+            """Sensor for collecting campaign performance data"""
+            # In a real implementation, this would collect data from the environment
+            # For now, we'll just return an empty dictionary
+            return {}
+        
+        # Add the sensor to the BayesBrain
+        self.brain.add_sensor(campaign_performance_sensor)
     
     def _initialize_action_space(self) -> None:
         """Initialize the action space for budget allocation decisions"""
@@ -103,154 +149,66 @@ class BadAIcon(BaseAIcon):
         total_budget = self.meta_campaign.daily_budget if self.meta_campaign else 1000.0
         
         # Create a budget allocation action space
-        self.action_space = create_budget_allocation_space(
+        action_space = create_budget_allocation_space(
             total_budget=total_budget,
             num_ads=num_ads,
             budget_step=self.budget_increment,
             min_budget=0.0
         )
         
+        # Set the action space in the BayesBrain
+        self.brain.set_action_space(action_space)
+        
         print(f"Initialized action space with {num_ads} ad dimensions")
         print(f"Total budget: ${total_budget:.2f}, increment: ${self.budget_increment:.2f}")
         
         # Print the dimensions of the action space
-        for dim in self.action_space.dimensions:
+        for dim in action_space.dimensions:
             print(f"- {dim.name}: {dim.dim_type}, range: {dim.min_value} to {dim.max_value}, step: {dim.step}")
     
     def _initialize_posterior_samples(self) -> None:
         """Initialize posterior samples with reasonable priors"""
         num_ads = max(1, len(self.campaigns))
         num_days = 3  # Default to 3-day effect modifiers
+        num_samples = 1000  # Number of samples to maintain
         
         # Conversion rate samples (phi) - around 5% conversion rate with small variance
-        self.posterior_samples["phi"] = np.random.normal(
-            0.05, 0.01, size=(self.num_posterior_samples, num_ads)
+        phi_samples = np.random.normal(
+            0.05, 0.01, size=(num_samples, num_ads)
         )
         
         # Cost per click samples (c) - around $0.70 per click with gamma distribution
-        self.posterior_samples["c"] = np.random.gamma(
-            5.0, 1/7.0, size=(self.num_posterior_samples, num_ads)
+        c_samples = np.random.gamma(
+            5.0, 1/7.0, size=(num_samples, num_ads)
         )
         
         # Day effect multiplier samples (delta) - log-normal distribution centered at 1.0
-        self.posterior_samples["delta"] = np.exp(np.random.normal(
-            0, 0.3, size=(self.num_posterior_samples, num_days)
+        delta_samples = np.exp(np.random.normal(
+            0, 0.3, size=(num_samples, num_days)
         ))
+        
+        # Set the posterior samples in the BayesBrain
+        self.brain.set_posterior_samples({
+            "phi": phi_samples,
+            "c": c_samples,
+            "delta": delta_samples
+        })
     
-    def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Process input data (campaign performance) and make budget allocation decisions
-        Returns updated budget allocations
-        """
-        # Update internal state with new data
-        self.update_state(input_data)
-        
-        # Use BayesBrainGPT to determine optimal budget allocation
-        allocations, expected_roi = self._calculate_budget_allocations()
-        
-        # Update campaign budgets based on allocations
-        if self.meta_campaign and self.meta_campaign.status == "active":
-            self._apply_budget_allocations(allocations)
-            
-        return {
-            "budget_allocations": allocations,
-            "expected_roi": expected_roi,
-            "meta_campaign_status": self.meta_campaign.status if self.meta_campaign else "not_initialized",
-            "action_space_dimensions": len(self.action_space.dimensions) if self.action_space else 0
-        }
-    
-    def update_state(self, state_data: Dict[str, Any]) -> None:
-        """Update internal state with new campaign performance data"""
-        # Skip state updates for now
-        
-        # Update meta campaign metrics if applicable
-        if self.meta_campaign and "campaign_metrics" in state_data:
-            self.meta_campaign.update_metrics(state_data["campaign_metrics"])
-            
-        # Update posterior samples if campaign performance data is provided
-        if "campaign_performance" in state_data:
-            self._update_posterior_samples(state_data["campaign_performance"])
-    
-    def _update_posterior_samples(self, performance_data: Dict[str, Any]) -> None:
-        """
-        Update posterior samples based on new campaign performance data
-        
-        In a full implementation, this would run a proper Bayesian inference step
-        using TensorFlow Probability, PyMC, or similar
-        """
-        # For now, we'll use a simplified update that adjusts the existing samples
-        # In a real implementation, this would be replaced with proper Bayesian inference
-        
-        # Example of a simple update for demonstration purposes
-        if "observed_sales" in performance_data and "observed_cpc" in performance_data:
-            # In real implementation, this would be a proper posterior update
-            # Here we just shift the means slightly toward the observed data
-            
-            # Get observed data
-            observed_sales = np.array(performance_data["observed_sales"])  # Shape: [days, ads]
-            observed_cpc = np.array(performance_data["observed_cpc"])  # Shape: [ads]
-            budgets = np.array(performance_data.get("budgets", np.ones_like(observed_sales)))  # Shape: [days, ads]
-            
-            # Simple Bayesian update simulation (not real inference)
-            # Shift phi samples toward observed conversion rates
-            num_days, num_ads = observed_sales.shape
-            
-            # Ensure our posterior samples match the current number of ads
-            if self.posterior_samples["phi"].shape[1] != num_ads:
-                self._initialize_posterior_samples()
-            
-            # Update phi (conversion rate) - simplified
-            for d in range(num_days):
-                for i in range(num_ads):
-                    if budgets[d, i] > 0:
-                        observed_rate = observed_sales[d, i] / budgets[d, i]
-                        self.posterior_samples["phi"][:, i] = (
-                            0.95 * self.posterior_samples["phi"][:, i] + 
-                            0.05 * observed_rate
-                        )
-            
-            # Update c (cost per click) - simplified
-            for i in range(num_ads):
-                self.posterior_samples["c"][:, i] = (
-                    0.95 * self.posterior_samples["c"][:, i] + 
-                    0.05 * observed_cpc[i]
-                )
-    
-    def _calculate_budget_allocations(self) -> Tuple[Dict[str, float], float]:
-        """
-        Use BayesBrainGPT to calculate optimal budget allocations
-        
-        Returns:
-            Tuple[Dict[str, float], float]: (allocations, expected_roi)
-        """
-        # If no campaigns, return empty allocations
-        if not self.campaigns:
-            return {}, 0.0
-            
-        # Create mapping from position to campaign_id
-        campaigns_list = list(self.campaigns.values())
-        campaign_ids = [campaign.id for campaign in campaigns_list]
-        
-        # Get total budget from meta campaign
-        if self.meta_campaign:
-            total_budget = self.meta_campaign.daily_budget
-        else:
-            # If no meta campaign, use sum of individual campaign budgets
-            total_budget = sum(campaign.daily_budget for campaign in campaigns_list)
-        
-        # Ensure action space is initialized and up to date
-        if self.action_space is None or len(self.action_space.dimensions) != len(self.campaigns):
-            self._initialize_action_space()
-        
+    def _initialize_utility_function(self) -> None:
+        """Initialize the utility function for decision-making"""
         # Define a utility function based on our posterior samples
         def calculate_expected_roi(action: Dict[str, float]) -> float:
             """Calculate expected ROI for a given budget allocation"""
+            # Get campaign IDs in the right order
+            campaign_ids = list(self.campaigns.keys())
+            
             # Convert action dict to numpy array in the right order
             budgets = np.array([action[f"ad{i+1}_budget"] for i in range(len(campaign_ids))])
             
             # Get posterior samples
-            phi_samples = self.posterior_samples["phi"]  # Conversion rate samples
-            c_samples = self.posterior_samples["c"]      # Cost per click samples
+            posterior_samples = self.brain.posterior_samples
+            phi_samples = posterior_samples["phi"]  # Conversion rate samples
+            c_samples = posterior_samples["c"]      # Cost per click samples
             
             # Calculate expected sales for each sample
             # Simple model: sales = budget * conversion_rate / cost_per_click
@@ -270,33 +228,129 @@ class BadAIcon(BaseAIcon):
             # Return mean ROI across all samples
             return float(np.mean(expected_roi))
         
-        # Sample actions and find the one with highest expected ROI
-        best_action = None
-        best_roi = float('-inf')
+        # Set the utility function in the BayesBrain
+        self.brain.set_utility_function(calculate_expected_roi)
+    
+    def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Process input data (campaign performance) and make budget allocation decisions
+        Returns updated budget allocations
+        """
+        # Update internal state with new data
+        self.update_state(input_data)
         
-        # Try a reasonable number of samples to find a good allocation
-        num_samples = min(1000, self.action_space.get_size() if hasattr(self.action_space, 'get_size') else 1000)
+        # Create a simple environment object from the input data
+        environment = {
+            "campaigns": self.campaigns,
+            "meta_campaign": self.meta_campaign,
+            "input_data": input_data
+        }
         
-        for _ in range(num_samples):
-            action = self.action_space.sample()
-            roi = calculate_expected_roi(action)
-            
-            if roi > best_roi:
-                best_roi = roi
-                best_action = action
+        # Use BayesBrain to perceive the environment and decide on the best action
+        best_action, expected_roi = self.brain.perceive_and_decide(environment)
         
         # Convert action space allocation to campaign_id dictionary
+        allocations = {}
         if best_action:
-            allocations = {}
+            campaign_ids = list(self.campaigns.keys())
             for i, campaign_id in enumerate(campaign_ids):
                 allocations[campaign_id] = best_action[f"ad{i+1}_budget"]
         else:
             # Fallback to equal allocation if no valid action found
-            equal_share = total_budget / len(campaign_ids)
-            allocations = {campaign_id: equal_share for campaign_id in campaign_ids}
-            best_roi = 0.0
+            total_budget = self.meta_campaign.daily_budget if self.meta_campaign else 1000.0
+            equal_share = total_budget / max(1, len(self.campaigns))
+            allocations = {campaign_id: equal_share for campaign_id in self.campaigns.keys()}
+            expected_roi = 0.0
         
-        return allocations, best_roi
+        # Update campaign budgets based on allocations
+        if self.meta_campaign and self.meta_campaign.status == "active":
+            self._apply_budget_allocations(allocations)
+            
+        # Get current state factors
+        state_factors = self.brain.get_state_factors()
+            
+        return {
+            "budget_allocations": allocations,
+            "expected_roi": expected_roi,
+            "meta_campaign_status": self.meta_campaign.status if self.meta_campaign else "not_initialized",
+            "action_space_dimensions": len(self.brain.get_action_space().dimensions) if self.brain.get_action_space() else 0,
+            "state_factors": state_factors
+        }
+    
+    def update_state(self, state_data: Dict[str, Any]) -> None:
+        """Update internal state with new campaign performance data"""
+        # Update state factors in the BayesBrain
+        for key, value in state_data.items():
+            if key in self.brain.get_state_factors():
+                self.brain.update_state_factor(key, value)
+        
+        # Update meta campaign metrics if applicable
+        if self.meta_campaign and "campaign_metrics" in state_data:
+            self.meta_campaign.update_metrics(state_data["campaign_metrics"])
+            
+        # Update posterior samples if campaign performance data is provided
+        if "campaign_performance" in state_data:
+            self._update_posterior_samples(state_data["campaign_performance"])
+    
+    def _update_posterior_samples(self, performance_data: Dict[str, Any]) -> None:
+        """
+        Update posterior samples based on new campaign performance data
+        
+        In a full implementation, this would run a proper Bayesian inference step
+        using TensorFlow Probability, PyMC, or similar
+        """
+        # Define an update function for the posterior samples
+        def update_function(posterior_samples, performance_data):
+            """Update posterior samples based on new performance data"""
+            # For now, we'll use a simplified update that adjusts the existing samples
+            # In a real implementation, this would be replaced with proper Bayesian inference
+            
+            # Get observed data
+            observed_sales = np.array(performance_data["observed_sales"])  # Shape: [days, ads]
+            observed_cpc = np.array(performance_data["observed_cpc"])  # Shape: [ads]
+            budgets = np.array(performance_data.get("budgets", np.ones_like(observed_sales)))  # Shape: [days, ads]
+            
+            # Simple Bayesian update simulation (not real inference)
+            # Shift phi samples toward observed conversion rates
+            num_days, num_ads = observed_sales.shape
+            
+            # Make a copy of the posterior samples to avoid modifying the original
+            updated_samples = {
+                "phi": posterior_samples["phi"].copy(),
+                "c": posterior_samples["c"].copy(),
+                "delta": posterior_samples["delta"].copy()
+            }
+            
+            # Ensure our posterior samples match the current number of ads
+            if updated_samples["phi"].shape[1] != num_ads:
+                # If the number of ads has changed, we need to reinitialize
+                return None
+            
+            # Update phi (conversion rate) - simplified
+            for d in range(num_days):
+                for i in range(num_ads):
+                    if budgets[d, i] > 0:
+                        observed_rate = observed_sales[d, i] / budgets[d, i]
+                        updated_samples["phi"][:, i] = (
+                            0.95 * updated_samples["phi"][:, i] + 
+                            0.05 * observed_rate
+                        )
+            
+            # Update c (cost per click) - simplified
+            for i in range(num_ads):
+                updated_samples["c"][:, i] = (
+                    0.95 * updated_samples["c"][:, i] + 
+                    0.05 * observed_cpc[i]
+                )
+            
+            return updated_samples
+        
+        # Use the BayesBrain to update the posterior samples
+        self.brain.update_posterior_samples(performance_data, update_function)
+        
+        # If the update function returned None, we need to reinitialize
+        if self.brain.get_posterior_samples() is None:
+            self._initialize_posterior_samples()
     
     def _apply_budget_allocations(self, allocations: Dict[str, float]) -> None:
         """Apply the calculated budget allocations to the campaigns"""
@@ -312,6 +366,7 @@ class BadAIcon(BaseAIcon):
         # Reinitialize posterior samples and action space with the new campaign count
         self._initialize_posterior_samples()
         self._initialize_action_space()
+        self._initialize_utility_function()
     
     def remove_campaign(self, campaign_id: str) -> bool:
         """Remove a campaign from the BAD AIcon"""
@@ -322,6 +377,7 @@ class BadAIcon(BaseAIcon):
             # Reinitialize posterior samples and action space with the updated campaign count
             self._initialize_posterior_samples()
             self._initialize_action_space()
+            self._initialize_utility_function()
             return True
         else:
             print(f"Campaign with ID {campaign_id} not found")
@@ -334,6 +390,14 @@ class BadAIcon(BaseAIcon):
         
         # Reinitialize the action space with the new increment
         self._initialize_action_space()
+        
+    def get_action_space(self):
+        """Get the current action space"""
+        return self.brain.get_action_space()
+        
+    def sample_allocation(self):
+        """Sample a random allocation from the action space"""
+        return self.brain.sample_action()
 
 @dataclass
 class AgentDefinition:
