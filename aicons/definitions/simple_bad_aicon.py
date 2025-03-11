@@ -6,8 +6,9 @@ This module provides a clean, simple implementation of BadAIcon that properly us
 
 from typing import Dict, List, Any, Optional
 import numpy as np
+
+# Fix imports - remove action_space imports
 from aicons.bayesbrainGPT.bayes_brain import BayesBrain
-from aicons.bayesbrainGPT.decision_making.action_space import create_budget_allocation_space
 
 class SimpleBadAIcon:
     """
@@ -15,16 +16,16 @@ class SimpleBadAIcon:
     that properly uses BayesBrain.
     """
     
-    def __init__(self, name: str, capabilities: List[str]):
+    def __init__(self, name: str, capabilities: List[str] = None):
         """
         Initialize a SimpleBadAIcon with an empty BayesBrain.
         
         Args:
             name: Name of the AIcon
-            capabilities: List of capabilities
+            capabilities: List of capabilities (optional)
         """
         self.name = name
-        self.capabilities = capabilities
+        self.capabilities = capabilities or []
         self.type = "bad"
         
         # Create an empty BayesBrain
@@ -32,25 +33,17 @@ class SimpleBadAIcon:
         
         # Initialize other attributes
         self.campaigns = {}
-        self.budget_increment = 100.0
     
-    def configure_action_space(self, total_budget: float = 1000.0, num_ads: int = 2):
+    def configure_state_factors(self, state_factors: Dict[str, Any] = None):
         """
-        Configure the action space for budget allocation.
+        Configure the state factors for the BayesBrain.
         
         Args:
-            total_budget: Total budget to allocate
-            num_ads: Number of ads to allocate budget to
+            state_factors: Dictionary of state factors (optional)
         """
-        action_space = create_budget_allocation_space(
-            total_budget=total_budget,
-            num_ads=num_ads,
-            budget_step=self.budget_increment,
-            min_budget=0.0
-        )
-        
-        self.brain.set_action_space(action_space)
-        return action_space
+        if state_factors:
+            # Set the state factors directly in the brain
+            self.brain.set_state_factors(state_factors)
     
     def configure_utility_function(self, utility_function):
         """
@@ -60,15 +53,6 @@ class SimpleBadAIcon:
             utility_function: A callable that takes an action and returns a utility value
         """
         self.brain.set_utility_function(utility_function)
-    
-    def configure_state_factors(self, state_factors: Dict[str, Any]):
-        """
-        Configure the state factors for the BayesBrain.
-        
-        Args:
-            state_factors: Dictionary of state factors
-        """
-        self.brain.set_state_factors(state_factors)
     
     def configure_posterior_samples(self, posterior_samples: Dict[str, np.ndarray]):
         """

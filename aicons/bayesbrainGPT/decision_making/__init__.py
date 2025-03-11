@@ -10,5 +10,3 @@ from .action_space import (
     ActionSpace,
     create_budget_allocation_space
 )
-
-from .bayes_brain import BayesBrain
