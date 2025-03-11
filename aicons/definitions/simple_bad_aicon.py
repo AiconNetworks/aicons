@@ -33,12 +33,7 @@ class SimpleBadAIcon:
         
         # Initialize other attributes
         self.campaigns = {}
-        
-        # DEBUG: Print attributes
-        print("SimpleBadAIcon.__init__ completed. Attributes:")
-        for attr in dir(self):
-            if not attr.startswith('__'):
-                print(f"  {attr}: {type(getattr(self, attr))}")
+    
     
     def add_factor_continuous(self, name: str, value: float, uncertainty: float = 0.1, 
                               lower_bound: Optional[float] = None, upper_bound: Optional[float] = None,
@@ -244,4 +239,80 @@ class SimpleBadAIcon:
         Returns:
             Tuple of (best_action, utility)
         """
-        return self.brain.perceive_and_decide(environment) 
+        return self.brain.perceive_and_decide(environment)
+    
+    def get_state(self, format_nicely: bool = False):
+        """
+        Get the current state (prior distributions) from the BayesBrain.
+        
+        Args:
+            format_nicely: Whether to return a formatted human-readable representation
+            
+        Returns:
+            Dictionary of state factors, or a formatted string if format_nicely is True
+        """
+        state = self.brain.get_state_factors()
+        
+        if not format_nicely:
+            return state
+        
+        # Format nicely for human readability
+        formatted = []
+        formatted.append(f"AIcon State ({len(state)} factors):")
+        
+        for name, factor in state.items():
+            factor_type = factor["type"]
+            factor_value = factor["value"]
+            distribution = factor["distribution"]
+            
+            # Basic factor info
+            factor_str = f"\n{name}:"
+            factor_str += f"\n  Type: {factor_type}"
+            factor_str += f"\n  Distribution: {distribution}"
+            factor_str += f"\n  Current value: {factor_value}"
+            
+            # Distribution parameters
+            params = factor["params"]
+            if factor_type == "continuous":
+                factor_str += f"\n  Mean: {params.get('loc', 'N/A')}"
+                factor_str += f"\n  Uncertainty: {params.get('scale', 'N/A')}"
+                
+                if "constraints" in factor and factor["constraints"]:
+                    constraints = factor["constraints"]
+                    bounds = []
+                    if "lower" in constraints:
+                        bounds.append(f">= {constraints['lower']}")
+                    if "upper" in constraints:
+                        bounds.append(f"<= {constraints['upper']}")
+                    factor_str += f"\n  Constraints: {', '.join(bounds)}"
+                    
+            elif factor_type == "categorical":
+                categories = factor.get("categories", [])
+                probs = params.get("probs", [])
+                
+                # Format categories and their probabilities
+                if categories and probs and len(categories) == len(probs):
+                    factor_str += "\n  Categories (probability):"
+                    for cat, prob in zip(categories, probs):
+                        factor_str += f"\n    {cat}: {prob:.2f}"
+                else:
+                    factor_str += f"\n  Categories: {categories}"
+                    factor_str += f"\n  Probabilities: {probs}"
+                    
+            elif factor_type == "discrete":
+                if "categories" in factor:
+                    factor_str += f"\n  Possible values: {factor['categories']}"
+                elif "rate" in params:
+                    factor_str += f"\n  Rate parameter: {params['rate']}"
+                    
+                if "constraints" in factor and factor["constraints"]:
+                    constraints = factor["constraints"]
+                    factor_str += f"\n  Constraints: {constraints}"
+            
+            # Add description if available
+            if "description" in factor and factor["description"]:
+                factor_str += f"\n  Description: {factor['description']}"
+                
+            formatted.append(factor_str)
+            
+        return "\n".join(formatted) 
