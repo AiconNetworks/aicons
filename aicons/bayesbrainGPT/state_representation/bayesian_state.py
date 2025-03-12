@@ -6,7 +6,7 @@ where the brain's internal model consists of latent variables that explain senso
 """
 
 import json
-from typing import Dict, Any, List, Optional, Union
+from typing import Dict, Any, List, Optional, Union, Callable
 import numpy as np
 from pathlib import Path
 import tensorflow as tf
@@ -62,8 +62,10 @@ class BayesianState:
             self._initialize_from_config(latent_config)
         
         # For hierarchical generative models
-        self.prior_distributions = {}  # TFP/Pyro distributions for each latent variable
+        self.prior_distributions = {}  # TFP distributions for each latent variable
         self.hierarchical_relations = {}  # Conditional dependencies between variables
+        self.conditional_distributions = {}  # Functions that return conditional distributions
+        self.topological_order = []  # Ordering of factors for joint distribution
     
     def _initialize_from_llm_data(self, llm_factors):
         """
@@ -402,7 +404,176 @@ class BayesianState:
                 if parent not in self.factors[child].relationships["depends_on"]:
                     self.factors[child].relationships["depends_on"].append(parent)
 
-    # Additional methods for hierarchical generative models can be added here
+    def add_conditional_factor(self, name: str, parent_factor_names: List[str], 
+                                conditional_dist_fn: Callable, description: str = ""):
+        """
+        Add a factor that depends on other factors (hierarchical relationship).
+        
+        In the Bayesian brain hypothesis, conditional relationships form the
+        hierarchical generative model that explains how the world works.
+        
+        Args:
+            name: Name of the factor
+            parent_factor_names: Names of parent factors this factor depends on
+            conditional_dist_fn: Function that takes parent values and returns a distribution
+            description: Description of what this factor represents
+            
+        Returns:
+            The created factor
+        """
+        # Verify parent factors exist
+        for parent_name in parent_factor_names:
+            if parent_name not in self.factors:
+                raise ValueError(f"Parent factor '{parent_name}' does not exist")
+        
+        # Store the conditional distribution function
+        self.conditional_distributions[name] = conditional_dist_fn
+        
+        # Create a hierarchical latent variable
+        factor = HierarchicalLatentVariable(
+            name=name,
+            parents={parent: 1.0 for parent in parent_factor_names},  # Placeholder weights
+            parameters={},  # Will be determined by conditional_dist_fn
+            uncertainty=1.0,  # Placeholder, will be determined by conditional_dist_fn
+            description=description
+        )
+        
+        # Add to factors
+        self.factors[name] = factor
+        
+        # Update hierarchical relations
+        self.hierarchical_relations[name] = {
+            "parents": parent_factor_names,
+            "type": "conditional"
+        }
+        
+        # Update topological order (a simple implementation)
+        self._update_topological_order()
+        
+        return factor
+        
+    def _update_topological_order(self):
+        """
+        Update the topological ordering of factors based on dependencies.
+        This ensures factors are evaluated in the correct order in the joint distribution.
+        """
+        # Start with factors that have no parents
+        self.topological_order = []
+        visited = set()
+        
+        # Find root factors (no parents)
+        root_factors = []
+        for name in self.factors:
+            if name not in self.hierarchical_relations:
+                root_factors.append(name)
+                
+        # Do topological sort
+        def visit(factor_name):
+            if factor_name in visited:
+                return
+            visited.add(factor_name)
+            
+            # Visit parents first
+            if factor_name in self.hierarchical_relations:
+                for parent in self.hierarchical_relations[factor_name]["parents"]:
+                    visit(parent)
+                    
+            self.topological_order.append(factor_name)
+            
+        # Visit all factors
+        for name in self.factors:
+            visit(name)
+    
+    def create_joint_distribution(self):
+        """
+        Create a TensorFlow Probability joint distribution from all factors.
+        
+        This implements the hierarchical generative model from the Bayesian brain
+        hypothesis, with explicit conditional dependencies between factors.
+        
+        Returns:
+            Joint distribution representing the entire generative model
+        """
+        # Ensure topological order is up to date
+        self._update_topological_order()
+        
+        # Build dictionary for JointDistributionNamed
+        dist_dict = {}
+        
+        # Add factors in topological order
+        for factor_name in self.topological_order:
+            factor = self.factors[factor_name]
+            
+            # Check if this is a conditional factor
+            if factor_name in self.hierarchical_relations:
+                # This is a conditional factor
+                parent_names = self.hierarchical_relations[factor_name]["parents"]
+                
+                # Create lambda function that depends on parent values
+                dist_dict[factor_name] = lambda *args, fn=factor_name: self._get_conditional_dist(fn, args)
+            else:
+                # This is a root factor (no parents)
+                if hasattr(factor, "tf_distribution") and factor.tf_distribution is not None:
+                    dist_dict[factor_name] = factor.tf_distribution
+                elif factor.type == "continuous":
+                    # Create continuous distribution
+                    dist_dict[factor_name] = tfd.Normal(
+                        loc=float(factor.value),
+                        scale=float(factor.uncertainty)
+                    )
+                elif factor.type == "categorical":
+                    # Create categorical distribution
+                    probs = factor.prior_probs.values() if hasattr(factor, "prior_probs") else None
+                    if probs is None:
+                        probs = [1.0/len(factor.possible_values)] * len(factor.possible_values)
+                    dist_dict[factor_name] = tfd.Categorical(probs=probs)
+                elif factor.type == "discrete":
+                    # Create discrete distribution
+                    if hasattr(factor, "distribution_params") and "rate" in factor.distribution_params:
+                        dist_dict[factor_name] = tfd.Poisson(rate=factor.distribution_params["rate"])
+                    else:
+                        dist_dict[factor_name] = tfd.Poisson(rate=float(factor.value))
+        
+        # Create and return joint distribution
+        return tfd.JointDistributionNamed(dist_dict)
+    
+    def _get_conditional_dist(self, factor_name, parent_values):
+        """
+        Get conditional distribution for a factor given parent values.
+        
+        Args:
+            factor_name: Name of the factor
+            parent_values: Values of parent factors
+            
+        Returns:
+            TensorFlow Probability distribution conditioned on parent values
+        """
+        # Get parent names
+        parent_names = self.hierarchical_relations[factor_name]["parents"]
+        
+        # Create dictionary mapping parent names to values
+        parent_dict = {name: value for name, value in zip(parent_names, parent_values)}
+        
+        # Call conditional distribution function
+        return self.conditional_distributions[factor_name](**parent_dict)
+    
+    def sample_from_prior(self, n_samples=1):
+        """
+        Sample from the joint prior distribution of all factors.
+        
+        Args:
+            n_samples: Number of samples to draw
+            
+        Returns:
+            Dictionary mapping factor names to sample values
+        """
+        # Create joint distribution
+        joint_dist = self.create_joint_distribution()
+        
+        # Sample from joint distribution
+        samples = joint_dist.sample(n_samples)
+        
+        return samples
 
 
 # For backward compatibility with any code that directly imports EnvironmentState

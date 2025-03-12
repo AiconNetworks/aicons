@@ -4,7 +4,7 @@ Simple BadAIcon Implementation
 This module provides a clean, simple implementation of BadAIcon that properly uses BayesBrain.
 """
 
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Union, Callable
 import numpy as np
 import tensorflow as tf
 import tensorflow_probability as tfp
@@ -249,38 +249,65 @@ class SimpleBadAIcon:
         """
         self.brain.set_posterior_samples(posterior_samples)
     
-    def add_sensor(self, name, sensor_function=None):
+    def add_sensor(self, name, sensor=None, factor_mapping=None):
         """
         Add a sensor to collect observations for the AIcon.
         
         Args:
             name: Name of the sensor
-            sensor_function: Function that returns observations
+            sensor: Sensor object or function that returns observations
                 (mapping factor names to values or (value, reliability) tuples)
+            factor_mapping: Optional dictionary mapping sensor factor names to state factor names
+                For example: {"base_conversion_rate": "conversion_rate"}
         
         Returns:
-            The sensor function for convenience
+            The sensor for convenience
         """
-        if sensor_function is None:
-            # Create a default sensor function that returns no data
-            sensor_function = lambda env=None: {}
-            
         # Initialize perception if not already done
         if not hasattr(self.brain, 'perception'):
             from aicons.bayesbrainGPT.perception.perception import BayesianPerception
             self.brain.perception = BayesianPerception(self.brain)
         
+        # Check if sensor is None
+        if sensor is None:
+            # Try to create a sensor based on name
+            from aicons.bayesbrainGPT.sensors.tf_sensors import MarketingSensor, WeatherSensor
+            
+            if name.lower() in ["marketing", "campaign", "ad"]:
+                sensor = MarketingSensor()
+            elif name.lower() in ["weather", "weather_station"]:
+                sensor = WeatherSensor()
+            else:
+                # Create a default sensor function that returns no data
+                sensor = lambda env=None: {}
+        
         # Register the sensor with perception
-        self.brain.perception.register_sensor(name, sensor_function)
-        return sensor_function
+        self.brain.perception.register_sensor(name, sensor, factor_mapping)
+        return sensor
     
-    def update_from_sensor(self, sensor_name, environment=None):
+    def add_factor_mapping(self, sensor_factor_name, state_factor_name):
+        """
+        Add a mapping between a sensor factor name and a state factor name.
+        This allows sensors and state factors to use different naming conventions.
+        
+        Args:
+            sensor_factor_name: Factor name used by sensors (e.g., "base_conversion_rate")
+            state_factor_name: Corresponding factor name in the state (e.g., "conversion_rate")
+        """
+        if not hasattr(self.brain, 'perception'):
+            from aicons.bayesbrainGPT.perception.perception import BayesianPerception
+            self.brain.perception = BayesianPerception(self.brain)
+            
+        self.brain.perception.add_factor_mapping(sensor_factor_name, state_factor_name)
+    
+    def update_from_sensor(self, sensor_name, environment=None, factor_mapping=None):
         """
         Update beliefs based on data from a specific sensor.
         
         Args:
             sensor_name: Name of the sensor to use
             environment: Optional environment data to pass to the sensor
+            factor_mapping: Optional one-time mapping of sensor factor names to state factor names
             
         Returns:
             True if update was successful
@@ -291,7 +318,7 @@ class SimpleBadAIcon:
             print(f"No sensors registered yet. Add sensors with add_sensor() first.")
             return False
         
-        return self.brain.perception.update_from_sensor(sensor_name, environment)
+        return self.brain.perception.update_from_sensor(sensor_name, environment, factor_mapping)
     
     def update_from_all_sensors(self, environment=None):
         """
@@ -430,4 +457,84 @@ class SimpleBadAIcon:
                 
             formatted.append(factor_str)
             
-        return "\n".join(formatted) 
+        return "\n".join(formatted)
+    
+    def add_conditional_factor(self, name: str, parent_factor_names: List[str], 
+                              conditional_dist_fn: Callable, description: str = ""):
+        """
+        Add a factor that depends on other factors (hierarchical relationship).
+        
+        This creates a true hierarchical Bayesian model where one factor's
+        distribution depends on the values of other factors.
+        
+        Args:
+            name: Name of the factor
+            parent_factor_names: Names of parent factors this factor depends on
+            conditional_dist_fn: Function that takes parent values and returns a distribution
+            description: Description of what this factor represents
+            
+        Returns:
+            The created factor
+        """
+        # Delegate to the BayesianState in BayesBrain
+        if not hasattr(self.brain, 'state'):
+            # Create BayesianState if not already present
+            from aicons.bayesbrainGPT.state_representation.bayesian_state import BayesianState
+            self.brain.state = BayesianState()
+            
+        # Check if the BayesianState has the add_conditional_factor method
+        if not hasattr(self.brain.state, 'add_conditional_factor'):
+            raise NotImplementedError("Hierarchical modeling not supported by the current state implementation")
+            
+        # Add the conditional factor
+        return self.brain.state.add_conditional_factor(
+            name=name,
+            parent_factor_names=parent_factor_names,
+            conditional_dist_fn=conditional_dist_fn,
+            description=description
+        )
+    
+    def create_hierarchical_model(self):
+        """
+        Create a hierarchical Bayesian model from all factors.
+        
+        This builds a joint probability distribution that respects the
+        conditional dependencies between factors.
+        
+        Returns:
+            Joint distribution representing the hierarchical model
+        """
+        # Delegate to the BayesianState in BayesBrain
+        if not hasattr(self.brain, 'state'):
+            raise ValueError("No state object found in BayesBrain")
+            
+        # Check if the BayesianState has the create_joint_distribution method
+        if not hasattr(self.brain.state, 'create_joint_distribution'):
+            raise NotImplementedError("Hierarchical modeling not supported by the current state implementation")
+            
+        # Create and return the joint distribution
+        return self.brain.state.create_joint_distribution()
+    
+    def sample_from_hierarchical_prior(self, n_samples=1):
+        """
+        Sample from the hierarchical prior distribution.
+        
+        This samples from the joint distribution of all factors, respecting
+        the hierarchical relationships between them.
+        
+        Args:
+            n_samples: Number of samples to draw
+            
+        Returns:
+            Dictionary mapping factor names to sample values
+        """
+        # Delegate to the BayesianState in BayesBrain
+        if not hasattr(self.brain, 'state'):
+            raise ValueError("No state object found in BayesBrain")
+            
+        # Check if the BayesianState has the sample_from_prior method
+        if not hasattr(self.brain.state, 'sample_from_prior'):
+            raise NotImplementedError("Hierarchical sampling not supported by the current state implementation")
+            
+        # Sample from the prior
+        return self.brain.state.sample_from_prior(n_samples) 
