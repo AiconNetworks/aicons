@@ -577,6 +577,12 @@ class SimpleBadAIcon:
             self.brain.perception = BayesianPerception(self.brain)
             print(f"No sensors registered yet. Add sensors with add_sensor() first.")
             return self.run_stats
+        
+        # Check if there are any state factors defined
+        state_factors = self.brain.get_state_factors()
+        if not state_factors:
+            print(f"No state factors (priors) defined. Add factors before running.")
+            return self.run_stats
             
         # Reset run statistics
         self.run_stats = {
