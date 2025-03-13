@@ -8,6 +8,8 @@ from typing import Dict, List, Any, Optional, Union, Callable
 import numpy as np
 import tensorflow as tf
 import tensorflow_probability as tfp
+import time
+from datetime import datetime
 
 # TFP shortcuts
 tfd = tfp.distributions
@@ -39,6 +41,15 @@ class SimpleBadAIcon:
         
         # Initialize other attributes
         self.campaigns = {}
+        
+        # Running state
+        self.is_running = False
+        self.run_stats = {
+            "iterations": 0,
+            "start_time": None,
+            "last_update_time": None,
+            "updates": []
+        }
     
     
     def add_factor_continuous(self, name: str, value: float, uncertainty: float = 0.1, 
@@ -77,16 +88,20 @@ class SimpleBadAIcon:
         elif lower_bound is not None:
             # Transformed distribution for lower-bounded variables
             shift = float(lower_bound)
+            # Fix: Use tfb.Chain instead of @ operator for composing bijectors
+            bijector = tfb.Chain([tfb.Softplus(), tfb.Shift(shift=shift)])
             tf_dist = tfd.TransformedDistribution(
                 distribution=tfd.Normal(loc=float(value)-shift, scale=float(uncertainty)),
-                bijector=tfb.Shift(shift=shift) @ tfb.Softplus()
+                bijector=bijector
             )
         elif upper_bound is not None:
             # Transformed distribution for upper-bounded variables
             shift = float(upper_bound)
+            # Fix: Use tfb.Chain instead of @ operator for composing bijectors
+            bijector = tfb.Chain([tfb.Softplus(), tfb.Scale(-1.0), tfb.Shift(shift=shift)])
             tf_dist = tfd.TransformedDistribution(
                 distribution=tfd.Normal(loc=shift-float(value), scale=float(uncertainty)),
-                bijector=tfb.Shift(shift=shift) @ tfb.Scale(-1.0) @ tfb.Softplus()
+                bijector=bijector
             )
         else:
             # Unconstrained normal distribution
@@ -537,4 +552,130 @@ class SimpleBadAIcon:
             raise NotImplementedError("Hierarchical sampling not supported by the current state implementation")
             
         # Sample from the prior
-        return self.brain.state.sample_from_prior(n_samples) 
+        return self.brain.state.sample_from_prior(n_samples)
+
+    def run(self, mode='once', sensor_name=None, interval=60, duration=None, environment=None):
+        """
+        Run the AIcon's perception system for updates.
+        
+        Args:
+            mode: Run mode - 'once', 'continuous', or 'finite'
+                - 'once': Run a single perception update and return
+                - 'continuous': Run continuously until stopped
+                - 'finite': Run for a specific duration or number of updates
+            sensor_name: Name of specific sensor to use (if None, use all sensors)
+            interval: Time between updates in seconds (for continuous/finite modes)
+            duration: Duration to run in seconds or number of updates (for finite mode)
+            environment: Optional environment data to pass to sensors
+            
+        Returns:
+            Dictionary with run statistics
+        """
+        # Check if we have perception and sensors
+        if not hasattr(self.brain, 'perception'):
+            from aicons.bayesbrainGPT.perception.perception import BayesianPerception
+            self.brain.perception = BayesianPerception(self.brain)
+            print(f"No sensors registered yet. Add sensors with add_sensor() first.")
+            return self.run_stats
+            
+        # Reset run statistics
+        self.run_stats = {
+            "iterations": 0,
+            "start_time": datetime.now(),
+            "last_update_time": None,
+            "updates": []
+        }
+        
+        # Run once
+        if mode == 'once':
+            print(f"Running single perception update...")
+            start_time = time.time()
+            
+            # Update from specific sensor or all sensors
+            if sensor_name:
+                success = self.update_from_sensor(sensor_name, environment)
+            else:
+                success = self.update_from_all_sensors(environment)
+                
+            end_time = time.time()
+            
+            # Record stats
+            self.run_stats["iterations"] = 1
+            self.run_stats["last_update_time"] = datetime.now()
+            self.run_stats["updates"].append({
+                "time": datetime.now(),
+                "success": success,
+                "sensor": sensor_name or "all",
+                "duration_sec": end_time - start_time
+            })
+            
+            print(f"Perception update completed. Success: {success}")
+            
+        # Run continuously or for a finite time
+        elif mode in ['continuous', 'finite']:
+            print(f"Starting {mode} perception run...")
+            start_run_time = time.time()
+            self.is_running = True
+            iterations = 0
+            
+            try:
+                while self.is_running:
+                    # Run perception update
+                    start_time = time.time()
+                    iterations += 1
+                    
+                    print(f"\nUpdate #{iterations} at {datetime.now()}")
+                    
+                    # Update from specific sensor or all sensors
+                    if sensor_name:
+                        success = self.update_from_sensor(sensor_name, environment)
+                    else:
+                        success = self.update_from_all_sensors(environment)
+                        
+                    end_time = time.time()
+                    update_duration = end_time - start_time
+                    
+                    # Record stats
+                    self.run_stats["iterations"] = iterations
+                    self.run_stats["last_update_time"] = datetime.now()
+                    self.run_stats["updates"].append({
+                        "time": datetime.now(),
+                        "success": success,
+                        "sensor": sensor_name or "all",
+                        "duration_sec": update_duration
+                    })
+                    
+                    print(f"Update completed in {update_duration:.2f}s. Success: {success}")
+                    
+                    # Check if we should stop for finite mode
+                    if mode == 'finite':
+                        if isinstance(duration, int) and iterations >= duration:
+                            print(f"Reached {duration} iterations. Stopping.")
+                            break
+                        elif isinstance(duration, (float, int)) and (time.time() - start_run_time) >= duration:
+                            print(f"Reached duration of {duration}s. Stopping.")
+                            break
+                    
+                    # Sleep until next update
+                    time.sleep(interval)
+                    
+            except KeyboardInterrupt:
+                print("\nPerception run interrupted by user.")
+            finally:
+                self.is_running = False
+                print(f"Perception run completed after {iterations} iterations.")
+                
+        else:
+            print(f"Unknown run mode: {mode}. Use 'once', 'continuous', or 'finite'.")
+            
+        return self.run_stats
+        
+    def stop(self):
+        """Stop a running continuous perception process."""
+        if self.is_running:
+            self.is_running = False
+            print("Stopping perception run...")
+            return True
+        else:
+            print("No perception run is currently active.")
+            return False 
