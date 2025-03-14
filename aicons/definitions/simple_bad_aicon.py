@@ -15,8 +15,20 @@ from datetime import datetime
 tfd = tfp.distributions
 tfb = tfp.bijectors
 
-# Fix imports - remove action_space imports
+# Fix imports - add action_space and utility_function imports
 from aicons.bayesbrainGPT.bayes_brain import BayesBrain
+from aicons.bayesbrainGPT.decision_making.action_space import (
+    ActionDimension, ActionSpace, 
+    create_budget_allocation_space,
+    create_time_budget_allocation_space,
+    create_multi_campaign_action_space,
+    create_marketing_ads_space
+)
+from aicons.bayesbrainGPT.utility_function.utility_function import (
+    UtilityFunction, TensorFlowUtilityFunction,
+    MarketingROIUtility, ConstrainedMarketingROI, WeatherDependentMarketingROI,
+    create_utility_function, create_custom_marketing_utility
+)
 
 class SimpleBadAIcon:
     """
@@ -50,6 +62,10 @@ class SimpleBadAIcon:
             "last_update_time": None,
             "updates": []
         }
+        
+        # Action space
+        self.action_space = None
+        self.utility_function = None
     
     
     def add_factor_continuous(self, name: str, value: float, uncertainty: float = 0.1, 
@@ -295,6 +311,52 @@ class SimpleBadAIcon:
             else:
                 # Create a default sensor function that returns no data
                 sensor = lambda env=None: {}
+        
+        # ENHANCEMENT: Auto-create required factors
+        # Check if the sensor has a get_expected_factors method
+        if hasattr(sensor, 'get_expected_factors'):
+            expected_factors = sensor.get_expected_factors()
+            current_state = self.brain.get_state_factors() or {}
+            
+            # Create any missing factors with default values
+            for factor_name, factor_info in expected_factors.items():
+                # Map the factor name if a mapping exists
+                if factor_mapping and factor_name in factor_mapping:
+                    mapped_name = factor_mapping[factor_name]
+                else:
+                    mapped_name = factor_name
+                
+                # Check if the factor already exists (with either name)
+                if mapped_name not in current_state and factor_name not in current_state:
+                    # Extract factor properties from factor_info
+                    factor_type = factor_info.get('type', 'continuous')
+                    default_value = factor_info.get('default_value', 0.0)
+                    uncertainty = factor_info.get('uncertainty', 0.1)
+                    lower_bound = factor_info.get('lower_bound', None)
+                    upper_bound = factor_info.get('upper_bound', None)
+                    categories = factor_info.get('categories', None)
+                    description = factor_info.get('description', f"Factor from {name} sensor")
+                    
+                    print(f"Auto-creating missing factor: {mapped_name} ({factor_type})")
+                    
+                    # Create the appropriate type of factor
+                    if factor_type == 'continuous':
+                        self.add_factor_continuous(
+                            mapped_name, default_value, uncertainty,
+                            lower_bound=lower_bound, upper_bound=upper_bound,
+                            description=description
+                        )
+                    elif factor_type == 'categorical' and categories:
+                        self.add_factor_categorical(
+                            mapped_name, default_value, categories,
+                            description=description
+                        )
+                    elif factor_type == 'discrete':
+                        self.add_factor_discrete(
+                            mapped_name, default_value, 
+                            min_value=lower_bound, max_value=upper_bound,
+                            description=description
+                        )
         
         # Register the sensor with perception
         self.brain.perception.register_sensor(name, sensor, factor_mapping)
@@ -684,4 +746,259 @@ class SimpleBadAIcon:
             return True
         else:
             print("No perception run is currently active.")
-            return False 
+            return False
+
+    def create_action_space(self, space_type: str = 'marketing', **kwargs):
+        """
+        Create an action space for the AIcon.
+        
+        Args:
+            space_type: Type of action space to create ('marketing', 'budget', 'time_budget', 'multi_campaign')
+            **kwargs: Additional arguments for the specific space type
+            
+        Returns:
+            The created ActionSpace
+        """
+        if space_type == 'marketing':
+            # Create a marketing ads space
+            total_budget = kwargs.get('total_budget', 1000.0)
+            num_ads = kwargs.get('num_ads', 2)
+            budget_step = kwargs.get('budget_step', 10.0)
+            min_budget = kwargs.get('min_budget', 0.0)
+            ad_names = kwargs.get('ad_names', None)
+            
+            self.action_space = create_marketing_ads_space(
+                total_budget=total_budget,
+                num_ads=num_ads,
+                budget_step=budget_step,
+                min_budget=min_budget,
+                ad_names=ad_names
+            )
+            
+        elif space_type == 'budget':
+            # Create a simple budget allocation space
+            total_budget = kwargs.get('total_budget', 1000.0)
+            num_ads = kwargs.get('num_ads', 2)
+            budget_step = kwargs.get('budget_step', 100.0)
+            min_budget = kwargs.get('min_budget', 0.0)
+            
+            self.action_space = create_budget_allocation_space(
+                total_budget=total_budget,
+                num_ads=num_ads,
+                budget_step=budget_step,
+                min_budget=min_budget
+            )
+            
+        elif space_type == 'time_budget':
+            # Create a time-based budget allocation space
+            total_budget = kwargs.get('total_budget', 1000.0)
+            num_ads = kwargs.get('num_ads', 2)
+            num_days = kwargs.get('num_days', 3)
+            budget_step = kwargs.get('budget_step', 100.0)
+            min_budget = kwargs.get('min_budget', 0.0)
+            
+            self.action_space = create_time_budget_allocation_space(
+                total_budget=total_budget,
+                num_ads=num_ads,
+                num_days=num_days,
+                budget_step=budget_step,
+                min_budget=min_budget
+            )
+            
+        elif space_type == 'multi_campaign':
+            # Create a multi-campaign action space
+            campaigns = kwargs.get('campaigns', {})
+            budget_step = kwargs.get('budget_step', 100.0)
+            
+            self.action_space = create_multi_campaign_action_space(
+                campaigns=campaigns,
+                budget_step=budget_step
+            )
+            
+        elif space_type == 'custom':
+            # Create a custom action space
+            dimensions = kwargs.get('dimensions', [])
+            constraints = kwargs.get('constraints', [])
+            
+            self.action_space = ActionSpace(
+                dimensions=dimensions,
+                constraints=constraints
+            )
+            
+        else:
+            raise ValueError(f"Unknown action space type: {space_type}")
+            
+        # Store the action space in the brain
+        self.brain.action_space = self.action_space
+        
+        print(f"Created {space_type} action space with {len(self.action_space.dimensions)} dimensions")
+        
+        return self.action_space
+    
+    def create_utility_function(self, utility_type: str = 'marketing_roi', **kwargs):
+        """
+        Create a utility function for the AIcon.
+        
+        Args:
+            utility_type: Type of utility function to create
+                - 'marketing_roi': Standard marketing ROI utility
+                - 'constrained_marketing_roi': ROI with business constraints
+                - 'weather_dependent_marketing_roi': ROI affected by weather
+                - 'custom_marketing': Customized marketing utility
+            **kwargs: Parameters for the specific utility function
+            
+        Returns:
+            The created utility function
+        """
+        # If using custom marketing utility, use the specialized creator
+        if utility_type == 'custom_marketing':
+            self.utility_function = create_custom_marketing_utility(**kwargs)
+        else:
+            # For predefined utility types, use the factory
+            # Add action space dimensions if they exist
+            if self.action_space:
+                kwargs['num_ads'] = len([d for d in self.action_space.dimensions 
+                                        if d.name.endswith('_budget')])
+                kwargs['ad_names'] = [d.name.replace('_budget', '') 
+                                    for d in self.action_space.dimensions 
+                                    if d.name.endswith('_budget')]
+            
+            # Create the utility function
+            self.utility_function = create_utility_function(utility_type, **kwargs)
+        
+        # Check if this is a TensorFlow utility
+        self.is_tensorflow_utility = isinstance(self.utility_function, TensorFlowUtilityFunction)
+        
+        # Store in brain for consistency
+        self.brain.utility_function = self.utility_function
+        
+        print(f"Created {utility_type} utility function: {self.utility_function.name}")
+        print(f"Description: {self.utility_function.description}")
+        
+        return self.utility_function
+    
+    def find_best_action(self, num_samples: int = 100, use_gradient: bool = False):
+        """
+        Find the best action based on the utility function.
+        
+        Args:
+            num_samples: Number of samples to evaluate
+            use_gradient: Whether to use gradient-based optimization (for TensorFlow utility)
+            
+        Returns:
+            Tuple of (best_allocation, utility)
+        """
+        if self.action_space is None:
+            raise ValueError("No action space defined. Call create_action_space() first.")
+            
+        if self.utility_function is None:
+            raise ValueError("No utility function defined. Call create_utility_function() first.")
+            
+        # Get posterior samples
+        posterior_samples = self.get_posterior_samples()
+        
+        if not posterior_samples:
+            raise ValueError("No posterior samples available. Run perception first.")
+            
+        # Convert posterior samples to TensorFlow format if needed
+        if self.is_tensorflow_utility:
+            # Convert to TensorFlow tensors
+            tf_samples = {}
+            for param_name, samples in posterior_samples.items():
+                if isinstance(samples, np.ndarray):
+                    tf_samples[param_name] = tf.convert_to_tensor(samples, dtype=tf.float32)
+                else:
+                    tf_samples[param_name] = samples
+                    
+            # Use TensorFlow optimization
+            if use_gradient and not self.action_space.is_discrete:
+                # Use gradient-based optimization
+                print("Using gradient-based optimization...")
+                best_action = self.action_space.optimize_action_tf(
+                    self.utility_function.evaluate_tf, tf_samples, num_steps=100
+                )
+                # Calculate utility for the best action
+                action_tensor = tf.constant([best_action[dim.name] for dim in self.action_space.dimensions])
+                utility = tf.reduce_mean(self.utility_function.evaluate_tf(action_tensor, tf_samples)).numpy()
+                return best_action, utility
+            else:
+                # Use enumeration or sampling
+                print("Using action enumeration with TensorFlow evaluation...")
+                return self.action_space.evaluate_actions_tf(
+                    self.utility_function.evaluate_tf, tf_samples, num_actions=num_samples
+                )
+        else:
+            # Use standard numpy evaluation
+            print("Using action enumeration with NumPy evaluation...")
+            return self.action_space.evaluate_actions(
+                self.utility_function.evaluate, posterior_samples, num_actions=num_samples
+            )
+    
+    def sample_action(self):
+        """
+        Sample a random action from the action space.
+        
+        Returns:
+            A randomly sampled action, or None if no action space is configured
+        """
+        if self.action_space is None:
+            raise ValueError("No action space defined. Call create_action_space() first.")
+            
+        return self.action_space.sample()
+    
+    def create_hierarchical_model_tf(self, num_ads=2, num_days=3):
+        """
+        Create a TensorFlow-based hierarchical Bayesian model for ad performance.
+        This model can be used for both inference and decision-making.
+        
+        Args:
+            num_ads: Number of ads
+            num_days: Number of days
+            
+        Returns:
+            Joint distribution representing the model
+        """
+        # Create joint distribution
+        joint_dist = tfd.JointDistributionNamed({
+            # Conversion rates for each ad
+            "phi": tfd.Independent(
+                tfd.Normal(loc=tf.ones(num_ads)*0.05,
+                           scale=tf.ones(num_ads)*0.01),
+                reinterpreted_batch_ndims=1
+            ),
+            # Cost per click for each ad
+            "c": tfd.Independent(
+                tfd.Gamma(concentration=tf.ones(num_ads)*5.0,
+                          rate=tf.ones(num_ads)*7.0),
+                reinterpreted_batch_ndims=1
+            ),
+            # Day multipliers
+            "delta": tfd.Independent(
+                tfd.LogNormal(loc=tf.zeros(num_days), scale=tf.ones(num_days)*0.3),
+                reinterpreted_batch_ndims=1
+            ),
+            # Observation noise
+            "sigma": tfd.HalfNormal(scale=1.0)
+        })
+        
+        # Store the model for use in perception and decision-making
+        self.tf_model = joint_dist
+        
+        # Create a matching action space
+        if self.action_space is None:
+            self.create_action_space(
+                space_type='marketing',
+                total_budget=1000.0,
+                num_ads=num_ads,
+                budget_step=10.0
+            )
+            
+        # Create a matching utility function
+        if self.utility_function is None:
+            self.create_utility_function(
+                utility_type='marketing_roi',
+                revenue_per_sale=10.0,
+                num_days=num_days
+            )
+            
+        return joint_dist 

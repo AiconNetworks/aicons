@@ -27,13 +27,13 @@ class MetaAdsSalesSensor(TFSensor):
     """
     Sensor for Meta (Facebook) ad campaign sales data.
     
-    This sensor provides observations for sales metrics:
-    - purchases: Number of purchases
-    - add_to_carts: Number of add to cart events
-    - initiated_checkouts: Number of checkout initiated events
-    - cost_per_result: Cost per result (typically cost per purchase)
-    - purchase_roas: Return on ad spend for purchases
-    - results: Number of results (typically purchases)
+    This sensor provides observations for sales metrics directly from Meta API:
+    - ad_performances: Dictionary of ad IDs to performance metrics
+    - adset_performances: Dictionary of adset IDs to performance metrics
+    - purchases: Total number of purchases for all ads
+    - add_to_carts: Total number of add to cart events
+    - initiated_checkouts: Total number of checkout initiated events
+    - results: Total number of results (typically purchases)
     - result_type: Type of result (default: "purchase")
     """
     
@@ -43,8 +43,8 @@ class MetaAdsSalesSensor(TFSensor):
                 access_token: Optional[str] = None,
                 ad_account_id: Optional[str] = None,
                 campaign_id: Optional[str] = None,
-                api_version: str = "v18.0",  # Use a more common API version
-                time_granularity: str = "day",  # Options: "day", "hour"
+                api_version: str = "v18.0",
+                time_granularity: str = "hour",  # Options: "day", "hour" - default to hourly
                 factor_mapping: Optional[Dict[str, str]] = None):
         """
         Initialize a Meta Ads Sales sensor.
@@ -56,7 +56,7 @@ class MetaAdsSalesSensor(TFSensor):
             ad_account_id: Facebook Ad Account ID (format: 'act_XXXXXXXXXX')
             campaign_id: Facebook Campaign ID to analyze
             api_version: Version of the Facebook Graph API to use (default: v18.0)
-            time_granularity: Time granularity for data retrieval ("day" or "hour")
+            time_granularity: Time granularity for data retrieval ("hour" or "day"), defaults to hourly
             factor_mapping: Optional mapping from sensor factor names to state factor names
         """
         super().__init__(name, reliability, factor_mapping)
@@ -80,14 +80,14 @@ class MetaAdsSalesSensor(TFSensor):
     
     def _setup_observable_factors(self):
         """Define which factors this sensor can observe and their reliabilities."""
-        # Sales performance metrics based on SalesMetrics dataclass
+        # Raw metrics directly from Meta API
         self.observable_factors = [
-            "purchases",              # Number of purchases
-            "add_to_carts",           # Number of add to cart events
-            "initiated_checkouts",    # Number of checkout initiated events
-            "cost_per_result",        # Cost per result (typically cost per purchase)
-            "purchase_roas",          # Return on ad spend for purchases
-            "results",                # Number of results (typically purchases)
+            "ad_performances",        # Dictionary of ad IDs to performance metrics
+            "adset_performances",     # Dictionary of adset IDs to performance metrics
+            "purchases",              # Total number of purchases for all ads
+            "add_to_carts",           # Total number of add to cart events for all ads
+            "initiated_checkouts",    # Total number of checkout initiated events for all ads
+            "results",                # Total number of results (typically purchases) for all ads
             "result_type"             # Type of result (default: "purchase")
         ]
         
@@ -113,167 +113,494 @@ class MetaAdsSalesSensor(TFSensor):
                     return float(action.get('value', 0))  # Convert to float for numerical operations
         return 0  # Default to 0 if no matching action type is found
 
-    def run(self) -> Dict[str, Any]:
+    def get_adsets_for_campaign(self, campaign_id):
         """
-        Run the sensor and get the current snapshot of raw Meta Ads sales data from right now.
+        Fetches all ad sets belonging to a campaign.
         
-        This method fetches exactly the raw metrics specified in SalesMetrics at the current moment.
+        Args:
+            campaign_id: ID of the campaign
             
         Returns:
-            Dictionary of raw sales metrics for the current moment
+            List of dictionaries containing ad set information
+        """
+        if not self.use_real_data:
+            return []  # Return empty list if not using real data
+            
+        try:
+            adset_fields = [
+                AdSet.Field.id,
+                AdSet.Field.name,
+                AdSet.Field.status
+            ]
+
+            params = {
+                "filtering": [{"field": "campaign.id", "operator": "EQUAL", "value": campaign_id}]
+            }
+
+            adsets = self.ad_account.get_ad_sets(fields=adset_fields, params=params)
+
+            adset_list = []
+            for adset in adsets:
+                adset_list.append({
+                    "adset_id": adset[AdSet.Field.id],
+                    "adset_name": adset[AdSet.Field.name],
+                    "campaign_id": campaign_id
+                })
+
+            print(f"Found {len(adset_list)} ad sets in campaign {campaign_id}")
+            return adset_list
+            
+        except Exception as e:
+            print(f"❌ Error getting ad sets for campaign {campaign_id}: {e}")
+            return []
+
+    def get_ads_for_adsets(self, adsets):
+        """
+        Fetches all ads inside the given ad sets.
+        
+        Args:
+            adsets: List of dictionaries containing ad set information
+            
+        Returns:
+            List of dictionaries containing ad information
+        """
+        if not self.use_real_data:
+            return []  # Return empty list if not using real data
+            
+        try:
+            ad_list = []
+
+            for adset in adsets:
+                adset_id = adset["adset_id"]
+
+                ad_fields = [
+                    Ad.Field.id,
+                    Ad.Field.name,
+                    Ad.Field.status,
+                    Ad.Field.effective_status  # Includes more detailed status info
+                ]
+                ad_params = {"filtering": [{"field": "adset.id", "operator": "EQUAL", "value": adset_id}]}
+                ads = self.ad_account.get_ads(fields=ad_fields, params=ad_params)
+
+                for ad in ads:
+                    ad_list.append({
+                        "ad_id": ad[Ad.Field.id],
+                        "ad_name": ad[Ad.Field.name],
+                        "adset_id": adset_id,
+                        "adset_name": adset["adset_name"],
+                        "campaign_id": adset["campaign_id"],
+                        "status": ad.get(Ad.Field.status, "UNKNOWN"),
+                        "effective_status": ad.get(Ad.Field.effective_status, "UNKNOWN")
+                    })
+
+            print(f"Found {len(ad_list)} ads in {len(adsets)} ad sets")
+            return ad_list
+            
+        except Exception as e:
+            print(f"❌ Error getting ads for ad sets: {e}")
+            return []
+
+    def get_insights_for_ads(self, ad_list, start_date=None, end_date=None):
+        """
+        Gets insights data for a list of ads with hourly or daily breakdown.
+        
+        Args:
+            ad_list: List of dictionaries containing ad information
+            start_date: Optional start date for insights data (format: YYYY-MM-DD)
+            end_date: Optional end date for insights data (format: YYYY-MM-DD)
+            
+        Returns:
+            List of dictionaries containing insights data
+        """
+        if not self.use_real_data or not ad_list:
+            return []  # Return empty list if not using real data or no ads
+            
+        try:
+            # Extract ad IDs
+            ad_ids = [ad["ad_id"] for ad in ad_list]
+            
+            # Fields to retrieve from insights
+            insight_fields = [
+                AdsInsights.Field.ad_id,
+                AdsInsights.Field.ad_name,
+                AdsInsights.Field.adset_id,
+                AdsInsights.Field.adset_name,
+                AdsInsights.Field.campaign_id,
+                AdsInsights.Field.date_start,
+                AdsInsights.Field.impressions,
+                AdsInsights.Field.clicks,
+                AdsInsights.Field.spend,
+                AdsInsights.Field.cpc,
+                AdsInsights.Field.ctr,
+                AdsInsights.Field.actions,
+                AdsInsights.Field.purchase_roas,
+            ]
+            
+            # Let's try different date presets to find data
+            date_presets_to_try = ["today", "yesterday", "last_3d"]
+            
+            # Track if we found hourly data
+            found_hourly_data = False
+            last_hour_insights = []
+            latest_hour = None
+            
+            for date_preset in date_presets_to_try:
+                print(f"Trying date_preset: {date_preset}")
+                
+                # Set up parameters for data retrieval
+                params = {
+                    "level": "ad",
+                    "date_preset": date_preset,
+                    "limit": 1000
+                }
+                
+                # Add hourly breakdown for hourly data
+                if self.time_granularity == "hour":
+                    params["breakdowns"] = ["hourly_stats_aggregated_by_advertiser_time_zone"]
+                
+                # Add filtering for ad IDs
+                if ad_ids:
+                    params["filtering"] = [{"field": "ad.id", "operator": "IN", "value": ad_ids}]
+                else:
+                    params["filtering"] = [{"field": "campaign.id", "operator": "EQUAL", "value": self.campaign_id}]
+                
+                print(f"Fetching data for {len(ad_ids)} ads with {date_preset} preset...")
+                
+                # Get insights from the API
+                insights = self.ad_account.get_insights(fields=insight_fields, params=params)
+                
+                # Convert insights to a list (it's an iterator)
+                insight_list = list(insights)
+                print(f"Retrieved {len(insight_list)} records")
+                
+                # If we have data and are looking for hourly
+                if insight_list and self.time_granularity == "hour":
+                    # Find latest hour in data
+                    for insight in insight_list:
+                        hour = insight.get("hourly_stats_aggregated_by_advertiser_time_zone", "")
+                        if hour and (latest_hour is None or hour > latest_hour):
+                            latest_hour = hour
+                    
+                    if latest_hour:
+                        print(f"Found latest hour: {latest_hour}")
+                        found_hourly_data = True
+                        
+                        # Filter to only include the latest hour
+                        for insight in insight_list:
+                            hour = insight.get("hourly_stats_aggregated_by_advertiser_time_zone", "")
+                            if hour == latest_hour:
+                                last_hour_insights.append({
+                                    "date": insight.get("date_start", "N/A"),
+                                    "hour_range": hour,
+                                    "campaign_id": insight.get("campaign_id"),
+                                    "adset_id": insight.get("adset_id"),
+                                    "adset_name": insight.get("adset_name"),
+                                    "ad_id": insight.get("ad_id"),
+                                    "ad_name": insight.get("ad_name"),
+                                    "impressions": int(insight.get("impressions", 0)),
+                                    "clicks": int(insight.get("clicks", 0)),
+                                    "ctr": float(insight.get("ctr", 0)),
+                                    "cpc": float(insight.get("cpc", 0)),
+                                    "spend": float(insight.get("spend", 0)),
+                                    "add_to_carts": self.extract_action_value(insight.get("actions", []), "offsite_conversion.fb_pixel_add_to_cart"),
+                                    "initiated_checkouts": self.extract_action_value(insight.get("actions", []), "offsite_conversion.fb_pixel_initiate_checkout"),
+                                    "purchases": self.extract_action_value(insight.get("actions", []), "offsite_conversion.fb_pixel_purchase"),
+                                    "purchase_roas": self.extract_action_value(insight.get("purchase_roas", []), "omni_purchase"),
+                                })
+                        
+                        print(f"Filtered to {len(last_hour_insights)} records for hour {latest_hour}")
+                        break
+                
+                # If we're looking for daily data or couldn't find hourly data but have some insights
+                if not found_hourly_data and insight_list:
+                    # Fallback to daily data
+                    print(f"Using daily data from {date_preset}")
+                    for insight in insight_list:
+                        last_hour_insights.append({
+                            "date": insight.get("date_start", "N/A"),
+                            "hour_range": "daily",
+                            "campaign_id": insight.get("campaign_id"),
+                            "adset_id": insight.get("adset_id"),
+                            "adset_name": insight.get("adset_name"),
+                            "ad_id": insight.get("ad_id"),
+                            "ad_name": insight.get("ad_name"),
+                            "impressions": int(insight.get("impressions", 0)),
+                            "clicks": int(insight.get("clicks", 0)),
+                            "ctr": float(insight.get("ctr", 0)),
+                            "cpc": float(insight.get("cpc", 0)),
+                            "spend": float(insight.get("spend", 0)),
+                            "add_to_carts": self.extract_action_value(insight.get("actions", []), "offsite_conversion.fb_pixel_add_to_cart"),
+                            "initiated_checkouts": self.extract_action_value(insight.get("actions", []), "offsite_conversion.fb_pixel_initiate_checkout"),
+                            "purchases": self.extract_action_value(insight.get("actions", []), "offsite_conversion.fb_pixel_purchase"),
+                            "purchase_roas": self.extract_action_value(insight.get("purchase_roas", []), "omni_purchase"),
+                        })
+                    
+                    # If we found data, stop trying other date presets
+                    if last_hour_insights:
+                        break
+            
+            if last_hour_insights:
+                data_type = "hourly" if found_hourly_data else "daily"
+                print(f"Found {len(last_hour_insights)} {data_type} records")
+                return last_hour_insights
+            else:
+                print("No data found with any date preset")
+                return []
+            
+        except Exception as e:
+            import traceback
+            print(f"❌ Error getting insights for ads: {e}")
+            print(traceback.format_exc())
+            return []
+
+    def process_insights_data(self, insights):
+        """
+        Process insights data without adding derived metrics.
+        
+        Args:
+            insights: List of dictionaries containing insights data
+            
+        Returns:
+            Dictionary containing raw data
+        """
+        if not insights:
+            return {
+                "ad_performances": {},
+                "adset_performances": {},
+                "purchases": 0,
+                "add_to_carts": 0,
+                "initiated_checkouts": 0,
+                "results": 0,
+                "result_type": "purchase"
+            }
+        
+        # Organize data by ad and adset
+        ad_performances = {}
+        adset_performances = {}
+        
+        # Total metrics
+        total_purchases = 0
+        total_add_to_carts = 0
+        total_initiated_checkouts = 0
+        
+        # Process each insight - only organizing data, no computation
+        for insight in insights:
+            # Get or create ad record
+            ad_id = insight["ad_id"]
+            adset_id = insight["adset_id"]
+            
+            # Create ad performance entry if it doesn't exist
+            if ad_id not in ad_performances:
+                ad_performances[ad_id] = {
+                    "ad_id": ad_id,
+                    "ad_name": insight["ad_name"],
+                    "adset_id": adset_id,
+                    "adset_name": insight.get("adset_name", ""),
+                    "status": insight.get("status", "UNKNOWN"),  # Include status if available
+                    "effective_status": insight.get("effective_status", "UNKNOWN"),  # Include effective status if available
+                    "purchases": 0,
+                    "add_to_carts": 0,
+                    "initiated_checkouts": 0,
+                    "impressions": 0,
+                    "clicks": 0,
+                    "spend": 0,
+                    "hourly_data" if self.time_granularity == "hour" else "daily_data": []
+                }
+            
+            # Create adset performance entry if it doesn't exist
+            if adset_id not in adset_performances:
+                adset_performances[adset_id] = {
+                    "adset_id": adset_id,
+                    "adset_name": insight.get("adset_name", ""),
+                    "purchases": 0,
+                    "add_to_carts": 0,
+                    "initiated_checkouts": 0,
+                    "impressions": 0,
+                    "clicks": 0,
+                    "spend": 0,
+                    "ads": []
+                }
+            
+            # Add this insight to hourly/daily data
+            data_key = "hourly_data" if self.time_granularity == "hour" else "daily_data"
+            
+            ad_performances[ad_id][data_key].append({
+                "date": insight["date"],
+                "hour_range": insight.get("hour_range", ""),
+                "purchases": insight["purchases"],
+                "add_to_carts": insight["add_to_carts"],
+                "initiated_checkouts": insight["initiated_checkouts"],
+                "impressions": insight["impressions"],
+                "clicks": insight["clicks"],
+                "spend": insight["spend"],
+                "purchase_roas": insight["purchase_roas"]
+            })
+            
+            # Update ad totals (simple summation)
+            ad_performances[ad_id]["purchases"] += insight["purchases"]
+            ad_performances[ad_id]["add_to_carts"] += insight["add_to_carts"]
+            ad_performances[ad_id]["initiated_checkouts"] += insight["initiated_checkouts"]
+            ad_performances[ad_id]["impressions"] += insight["impressions"]
+            ad_performances[ad_id]["clicks"] += insight["clicks"]
+            ad_performances[ad_id]["spend"] += insight["spend"]
+            
+            # Update adset totals (simple summation)
+            adset_performances[adset_id]["purchases"] += insight["purchases"]
+            adset_performances[adset_id]["add_to_carts"] += insight["add_to_carts"]
+            adset_performances[adset_id]["initiated_checkouts"] += insight["initiated_checkouts"]
+            adset_performances[adset_id]["impressions"] += insight["impressions"]
+            adset_performances[adset_id]["clicks"] += insight["clicks"]
+            adset_performances[adset_id]["spend"] += insight["spend"]
+            
+            # Track this ad in the adset's ads list if not already there
+            if ad_id not in [a["ad_id"] for a in adset_performances[adset_id].get("ads", [])]:
+                adset_performances[adset_id]["ads"].append({
+                    "ad_id": ad_id,
+                    "ad_name": insight["ad_name"],
+                    "status": insight.get("status", "UNKNOWN"),
+                    "effective_status": insight.get("effective_status", "UNKNOWN")
+                })
+            
+            # Update campaign totals
+            total_purchases += insight["purchases"]
+            total_add_to_carts += insight["add_to_carts"]
+            total_initiated_checkouts += insight["initiated_checkouts"]
+        
+        return {
+            "ad_performances": ad_performances,
+            "adset_performances": adset_performances,
+            "purchases": total_purchases,
+            "add_to_carts": total_add_to_carts,
+            "initiated_checkouts": total_initiated_checkouts,
+            "results": int(total_purchases),
+            "result_type": "purchase"
+        }
+
+    def get_campaign_details(self, campaign_id):
+        """
+        Fetches campaign details including the objective.
+        
+        Args:
+            campaign_id: ID of the campaign
+            
+        Returns:
+            Dictionary containing campaign information
+        """
+        if not self.use_real_data:
+            return None
+            
+        try:
+            campaign_fields = [
+                Campaign.Field.id,
+                Campaign.Field.name,
+                Campaign.Field.status,
+                Campaign.Field.objective
+            ]
+
+            campaign = Campaign(campaign_id).api_get(fields=campaign_fields)
+            
+            return {
+                "campaign_id": campaign.get(Campaign.Field.id),
+                "campaign_name": campaign.get(Campaign.Field.name),
+                "campaign_status": campaign.get(Campaign.Field.status),
+                "campaign_objective": campaign.get(Campaign.Field.objective)
+            }
+            
+        except Exception as e:
+            print(f"❌ Error getting campaign details for campaign {campaign_id}: {e}")
+            return None
+
+    def run(self) -> Dict[str, Any]:
+        """
+        Run the sensor and get the current snapshot of raw Meta Ads data for all ads in the campaign.
+        
+        This method fetches ad-level metrics for every ad in the specified campaign.
+            
+        Returns:
+            Dictionary containing metrics for each ad and aggregate metrics for the campaign
         """
         # Try to get real data if credentials are available
         if self.use_real_data and self.campaign_id:
             try:
-                # First try to get the campaign to verify it exists
-                print(f"Checking campaign {self.campaign_id}...")
-                campaign_fields = [Campaign.Field.name]
-                campaign_params = {"filtering": f'[{{"field":"id","operator":"EQUAL","value":"{self.campaign_id}"}}]'}
+                # Step 0: Verify campaign objective
+                campaign_details = self.get_campaign_details(self.campaign_id)
                 
-                # Get campaign details to verify access
-                campaigns = self.ad_account.get_campaigns(fields=campaign_fields, params=campaign_params)
-                if not campaigns:
-                    print(f"❌ Campaign {self.campaign_id} not found")
-                    raise ValueError(f"Campaign {self.campaign_id} not found for account {self.ad_account_id}")
+                if campaign_details:
+                    campaign_objective = campaign_details.get("campaign_objective")
+                    print(f"Campaign objective: {campaign_objective}")
+                    
+                    # Check if campaign is for sales objective
+                    if campaign_objective != "OUTCOME_SALES":
+                        print(f"Campaign {self.campaign_id} objective is {campaign_objective}, not OUTCOME_SALES. Returning empty data.")
+                        return self.get_empty_data()
                 
-                campaign_name = campaigns[0].get(Campaign.Field.name, "Unknown Campaign")
-                print(f"✅ Found campaign: {campaign_name}")
+                # Step 1: Get all ad sets in the campaign
+                adsets = self.get_adsets_for_campaign(self.campaign_id)
                 
-                # Get date and time for time range based on granularity
+                if not adsets:
+                    print(f"No ad sets found in campaign {self.campaign_id}. Returning empty data.")
+                    return self.get_empty_data()
+                
+                # Step 2: Get all ads inside those ad sets
+                ads = self.get_ads_for_adsets(adsets)
+                
+                if not ads:
+                    print(f"No ads found in campaign {self.campaign_id}. Returning empty data.")
+                    return self.get_empty_data()
+                
+                # Step 3: Get insights for all ads
                 now = datetime.datetime.now()
                 
+                # Use dates according to time granularity
                 if self.time_granularity == "hour":
-                    # Format for hourly granularity (ISO 8601 format with timezone)
-                    # Start time: beginning of current hour
-                    start_hour = now.replace(minute=0, second=0, microsecond=0)
-                    # Format with timezone offset
-                    timezone_offset = now.strftime('%z') or '+0000'
-                    start_time = start_hour.strftime('%Y-%m-%dT%H:%M:%S') + timezone_offset
-                    
-                    # End time: current time
-                    end_time = now.strftime('%Y-%m-%dT%H:%M:%S') + timezone_offset
-                    
-                    print(f"Using hourly granularity: {start_time} to {end_time}")
+                    # For hourly, use the current day
+                    start_date = now.strftime('%Y-%m-%d')
+                    end_date = start_date
                 else:
-                    # Daily granularity (just date)
-                    today = now.strftime('%Y-%m-%d')
-                    start_time = today
-                    end_time = today
-                    print(f"Using daily granularity for date: {today}")
+                    # For daily, use yesterday
+                    yesterday = now - datetime.timedelta(days=1)
+                    start_date = yesterday.strftime('%Y-%m-%d')
+                    end_date = start_date
                 
-                # For debugging
-                print(f"Current date/time: {now.strftime('%Y-%m-%d %H:%M:%S')}")
+                insights = self.get_insights_for_ads(ads, start_date, end_date)
                 
-                # Get campaign insights data - use same fields as working example
-                insight_fields = [
-                    AdsInsights.Field.campaign_id,
-                    AdsInsights.Field.spend,
-                    AdsInsights.Field.clicks,
-                    AdsInsights.Field.cpc,
-                    AdsInsights.Field.ctr,
-                    AdsInsights.Field.actions,
-                    AdsInsights.Field.purchase_roas,
-                ]
+                if not insights:
+                    print(f"No insights data found for ads in campaign {self.campaign_id}. Returning empty data.")
+                    return self.get_empty_data()
                 
-                # Set up parameters for insights - ensure all parameters are properly formatted
-                params = {
-                    "level": "campaign",
-                    "filtering": f'[{{"field":"campaign.id","operator":"EQUAL","value":"{self.campaign_id}"}}]',
-                    "time_range": json.dumps({
-                        "since": start_time,
-                        "until": end_time
-                    })
-                }
+                # Step 4: Process insights data without adding derived metrics
+                return self.process_insights_data(insights)
                 
-                # Add time increment if using hourly granularity
-                if self.time_granularity == "hour":
-                    params["time_increment"] = 1
-                
-                print(f"Fetching insights for campaign {self.campaign_id}...")
-                print(f"Using parameters: {params}")
-                
-                # Get insights from the API
-                campaign_insights = self.ad_account.get_insights(fields=insight_fields, params=params)
-                
-                # Debug: print what we got back
-                print(f"API response received. Found {len(campaign_insights) if campaign_insights else 0} insights")
-                
-                if campaign_insights and len(campaign_insights) > 0:
-                    # Get the most recent insight
-                    insight = campaign_insights[0]
-                    
-                    # Debug: print the raw insight data
-                    print(f"Raw insight data keys: {list(insight.keys()) if insight else 'No data'}")
-                    
-                    # Extract the exact metrics required
-                    spend = float(insight.get("spend", 0))
-                    
-                    # Check for different purchase action types that might be in the data
-                    purchases = self.extract_action_value(insight.get("actions", []), "offsite_conversion.fb_pixel_purchase")
-                    if purchases == 0:  # Try web_in_store_purchase if no offsite conversions
-                        purchases = self.extract_action_value(insight.get("actions", []), "web_in_store_purchase")
-                    
-                    # Check for different add_to_cart action types
-                    add_to_carts = self.extract_action_value(insight.get("actions", []), "offsite_conversion.fb_pixel_add_to_cart") 
-                    if add_to_carts == 0:  # Try onsite conversion if no offsite
-                        add_to_carts = self.extract_action_value(insight.get("actions", []), "onsite_conversion.add_to_cart")
-                    
-                    # Check for different checkout action types
-                    initiated_checkouts = self.extract_action_value(insight.get("actions", []), "offsite_conversion.fb_pixel_initiate_checkout")
-                    if initiated_checkouts == 0:  # Try onsite conversion if no offsite
-                        initiated_checkouts = self.extract_action_value(insight.get("actions", []), "onsite_conversion.initiate_checkout")
-                    
-                    # Extract purchase ROAS - try multiple possible types
-                    purchase_roas = self.extract_action_value(insight.get("purchase_roas", []), "omni_purchase")
-                    if purchase_roas == 0:
-                        purchase_roas = self.extract_action_value(insight.get("purchase_roas", []), "offsite_purchase")
-                    if purchase_roas == 0:
-                        purchase_roas = self.extract_action_value(insight.get("purchase_roas", []), "web_in_store_purchase")
-                    
-                    # If still no ROAS, calculate it manually if we have purchases and spend
-                    if purchase_roas == 0 and purchases > 0 and spend > 0:
-                        # Assume average order value for calculation - adjust as needed
-                        avg_order_value = 100  # Default assumption
-                        purchase_roas = (purchases * avg_order_value) / spend
-                    
-                    # Calculate cost per result
-                    cost_per_result = spend / purchases if purchases > 0 else 0
-                    
-                    print(f"Extracted data: purchases={purchases}, add_to_carts={add_to_carts}, " +
-                          f"initiated_checkouts={initiated_checkouts}, purchase_roas={purchase_roas}")
-                    
-                    # Return exactly the metrics requested in SalesMetrics
-                    return {
-                        "purchases": purchases,
-                        "add_to_carts": add_to_carts,
-                        "initiated_checkouts": initiated_checkouts,
-                        "cost_per_result": cost_per_result,
-                        "purchase_roas": purchase_roas,
-                        "results": int(purchases),
-                        "result_type": "purchase"
-                    }
-                else:
-                    print("No insights data returned for the campaign. Check if campaign ID is correct and has data.")
             except Exception as e:
                 import traceback
                 print(f"❌ Error in Meta Ads API data fetching: {e}")
                 print(traceback.format_exc())  # Print full traceback for better debugging
-                print("Falling back to sample data")
+                print("Returning empty data")
+                return self.get_empty_data()
         
-        # Return sample data if real data not available or fetch failed
+        # If no real data credentials, return empty data
+        return self.get_empty_data()
+    
+    def get_empty_data(self) -> Dict[str, Any]:
+        """
+        Returns an empty data structure when no real data is available.
+        
+        Returns:
+            Dictionary with empty structures for all factors
+        """
         return {
-            "purchases": 25.0,
-            "add_to_carts": 120.0,
-            "initiated_checkouts": 45.0,
-            "cost_per_result": 20.0,
-            "purchase_roas": 2.1,
-            "results": 25,
+            "ad_performances": {},
+            "adset_performances": {},
+            "purchases": 0.0,
+            "add_to_carts": 0.0,
+            "initiated_checkouts": 0.0,
+            "results": 0,
             "result_type": "purchase"
         }
     
     def fetch_data(self, environment: Any = None) -> Dict[str, TensorType]:
         """
-        Fetch Meta Ads sales performance data.
+        Fetch Meta Ads sales performance data for all ads in the campaign.
         
         Args:
             environment: Optional environment data (unused)
@@ -284,13 +611,109 @@ class MetaAdsSalesSensor(TFSensor):
         # Get current snapshot from run method
         data = self.run()
         
+        # Convert dictionaries to string representations for tensor compatibility
+        ad_performances_str = json.dumps(data["ad_performances"])
+        adset_performances_str = json.dumps(data["adset_performances"])
+        
         # Convert to proper tensor types
         return {
+            "ad_performances": ad_performances_str,
+            "adset_performances": adset_performances_str,
             "purchases": np.float32(data["purchases"]),
             "add_to_carts": np.float32(data["add_to_carts"]),
             "initiated_checkouts": np.float32(data["initiated_checkouts"]),
-            "cost_per_result": np.float32(data["cost_per_result"]),
-            "purchase_roas": np.float32(data["purchase_roas"]),
             "results": np.int32(data["results"]),
             "result_type": data["result_type"]
-        } 
+        }
+        
+    def get_expected_factors(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Return information about the factors this sensor expects to provide data for.
+        
+        This method is used for automatic factor creation when registering the sensor.
+        
+        Returns:
+            Dictionary mapping factor names to information about each factor
+        """
+        return {
+            "ad_performances": {
+                "type": "json",
+                "default_value": "{}",
+                "description": "Performance metrics for each ad in the campaign"
+            },
+            "adset_performances": {
+                "type": "json",
+                "default_value": "{}",
+                "description": "Performance metrics for each ad set in the campaign"
+            },
+            "purchases": {
+                "type": "continuous",
+                "default_value": 0.0,
+                "uncertainty": 1.0,
+                "lower_bound": 0.0,
+                "description": "Total number of purchases from ads"
+            },
+            "add_to_carts": {
+                "type": "continuous",
+                "default_value": 0.0,
+                "uncertainty": 5.0,
+                "lower_bound": 0.0,
+                "description": "Total number of add to cart events from ads"
+            },
+            "initiated_checkouts": {
+                "type": "continuous",
+                "default_value": 0.0,
+                "uncertainty": 2.0,
+                "lower_bound": 0.0,
+                "description": "Total number of checkout initiations from ads"
+            },
+            "results": {
+                "type": "discrete",
+                "default_value": 0,
+                "lower_bound": 0,
+                "upper_bound": 1000,
+                "description": "Total number of results (typically purchases) from ads"
+            },
+            "result_type": {
+                "type": "categorical",
+                "default_value": "purchase",
+                "categories": ["purchase", "add_to_cart", "checkout"],
+                "description": "Type of result being tracked in ads"
+            }
+        }
+
+    def get_all_ads(self) -> List[Dict[str, Any]]:
+        """
+        Get a simple list of all ads in the campaign with their names and status.
+        
+        Returns:
+            List of dictionaries containing ad information
+        """
+        # Get all adsets first
+        adsets = self.get_adsets_for_campaign(self.campaign_id)
+        if not adsets:
+            print(f"No ad sets found in campaign {self.campaign_id}")
+            return []
+            
+        # Get all ads in those adsets
+        ads = self.get_ads_for_adsets(adsets)
+        
+        # Return the list of ads (already contains status information)
+        return ads
+        
+    def get_active_ads(self) -> List[Dict[str, Any]]:
+        """
+        Get a list of only the active/running ads in the campaign.
+        
+        Returns:
+            List of dictionaries containing active ad information
+        """
+        all_ads = self.get_all_ads()
+        
+        # Filter to only include active ads
+        # Effective statuses that indicate the ad is running include:
+        # ACTIVE, CAMPAIGN_PAUSED, etc. - but we just want the ones that are fully active
+        active_ads = [ad for ad in all_ads if ad.get("effective_status", "") == "ACTIVE"]
+        
+        print(f"Found {len(active_ads)} active ads out of {len(all_ads)} total ads")
+        return active_ads 

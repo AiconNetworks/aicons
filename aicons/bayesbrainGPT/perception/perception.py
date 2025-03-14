@@ -92,6 +92,15 @@ class BayesianPerception:
         Returns:
             Dictionary of observations from all sensors
         """
+        # DEBUG: Print the environment to see what we're passing to sensors
+        print("DEBUG - Inside collect_sensor_data")
+        print(f"DEBUG - Environment type: {type(environment)}")
+        if environment:
+            print(f"DEBUG - Environment keys: {list(environment.keys())}")
+            if "base_conversion_rate" in environment:
+                print(f"DEBUG - base_conversion_rate value: {environment['base_conversion_rate']}")
+                print(f"DEBUG - base_conversion_rate type: {type(environment['base_conversion_rate'])}")
+        
         observations = {}
         
         for name, sensor in self.sensors.items():
@@ -100,6 +109,7 @@ class BayesianPerception:
             
             if isinstance(sensor, TFSensor):
                 # Use TFSensor's get_data method
+                print(f"DEBUG - About to call sensor.get_data(environment) for sensor: {name}")
                 data = sensor.get_data(environment)
                 print(f"Collected data from TFSensor: {name}")
             else:

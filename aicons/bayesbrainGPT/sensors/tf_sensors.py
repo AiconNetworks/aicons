@@ -100,17 +100,41 @@ class TFSensor(ABC):
         Map a sensor factor name to a state factor name using the mapping.
         
         Args:
-            sensor_factor_name: Factor name from the sensor
+            sensor_factor_name: Name of factor as known by the sensor
             
         Returns:
-            Corresponding state factor name, or the input name if no mapping exists
+            Name of factor as known by the state/brain
         """
+        # If there's a mapping for this factor, use it; otherwise, use the original name
         return self.factor_mapping.get(sensor_factor_name, sensor_factor_name)
-
+        
+    def get_expected_factors(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Return information about the factors this sensor expects to provide data for.
+        
+        This method is used for automatic factor creation when registering the sensor.
+        Subclasses should override this to provide more specific information.
+        
+        Returns:
+            Dictionary mapping factor names to information about each factor
+        """
+        # Default implementation returns basic information based on observable_factors
+        expected_factors = {}
+        
+        for factor_name in self.observable_factors:
+            # Create default factor information
+            expected_factors[factor_name] = {
+                "type": "continuous",  # Default to continuous
+                "default_value": 0.0,  # Default value
+                "uncertainty": 0.1,    # Default uncertainty
+                "description": f"Factor observed by {self.name} sensor"
+            }
+            
+        return expected_factors
+    
     def get_data(self, environment: Any = None) -> Dict[str, ObservationType]:
         """
-        Get current sensor data with reliability scores.
-        This is what the perception system calls to get information.
+        Get data from this sensor with reliability scores.
         
         Args:
             environment: Optional environment data to use for fetching
@@ -118,8 +142,17 @@ class TFSensor(ABC):
         Returns:
             Dictionary mapping factor names to (value, reliability) tuples
         """
+        # DEBUG: Print what environment looks like at this point
+        print(f"DEBUG - Inside {self.name}.get_data()")
+        print(f"DEBUG - Environment type: {type(environment)}")
+        if environment:
+            print(f"DEBUG - Environment keys: {list(environment.keys())}")
+
         # If streaming, use latest data, otherwise fetch new data
         data = self.latest_data if self.streaming else self.fetch_data(environment)
+        
+        # DEBUG: Print what fetch_data returned
+        print(f"DEBUG - After fetch_data, data: {data}")
         
         # Apply factor mapping and add reliability scores
         mapped_data = {}
@@ -128,6 +161,9 @@ class TFSensor(ABC):
                 # Map the sensor factor name to state factor name
                 state_factor_name = self._map_factor_name(factor)
                 mapped_data[state_factor_name] = (value, self.factor_reliabilities.get(factor, self.default_reliability))
+        
+        # DEBUG: Print the final data with reliability scores
+        print(f"DEBUG - Final mapped_data with reliability: {mapped_data}")
         
         return mapped_data
 
@@ -168,6 +204,39 @@ class MarketingSensor(TFSensor):
             "optimal_daily_ads": 0.8      # Good reliability for ad count
         }
     
+    def get_expected_factors(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Return information about the factors this sensor expects to provide data for.
+        
+        This method is used for automatic factor creation when registering the sensor.
+        
+        Returns:
+            Dictionary mapping factor names to information about each factor
+        """
+        return {
+            "base_conversion_rate": {
+                "type": "continuous",
+                "default_value": 0.05,
+                "uncertainty": 0.01,
+                "lower_bound": 0.0,
+                "upper_bound": 1.0,
+                "description": "Base conversion rate for ads"
+            },
+            "primary_channel": {
+                "type": "categorical",
+                "default_value": "facebook",
+                "categories": ["facebook", "google", "tiktok", "instagram"],
+                "description": "Primary marketing channel"
+            },
+            "optimal_daily_ads": {
+                "type": "discrete",
+                "default_value": 5,
+                "lower_bound": 1,
+                "upper_bound": 20,
+                "description": "Optimal number of daily ads"
+            }
+        }
+    
     def fetch_data(self, environment: Any = None) -> Dict[str, TensorType]:
         """
         Fetch marketing campaign data.
@@ -182,6 +251,15 @@ class MarketingSensor(TFSensor):
         Returns:
             Dictionary mapping factor names to observed values
         """
+        # DEBUG: Print the environment to see what's reaching this method
+        print("DEBUG - Inside MarketingSensor.fetch_data")
+        print(f"DEBUG - Environment type: {type(environment)}")
+        if environment:
+            print(f"DEBUG - Environment keys: {list(environment.keys())}")
+            if "base_conversion_rate" in environment:
+                print(f"DEBUG - base_conversion_rate value: {environment['base_conversion_rate']}")
+                print(f"DEBUG - base_conversion_rate type: {type(environment['base_conversion_rate'])}")
+        
         # In a real application, we would fetch this data from ad platforms
         # Here we simulate it with realistic values and noise
         
@@ -235,8 +313,9 @@ class WeatherSensor(TFSensor):
     Sensor for weather data.
     
     This sensor can observe:
-    - weather: Categorical factor for weather condition
     - temperature: Continuous factor for temperature
+    - weather_condition: Categorical factor for weather condition
+    - precipitation: Continuous factor for precipitation amount
     """
     def __init__(self, name: str = "weather_station", reliability: float = 0.9, factor_mapping: Optional[Dict[str, str]] = None):
         """
@@ -253,14 +332,50 @@ class WeatherSensor(TFSensor):
         """Define which factors this sensor can observe and their reliabilities."""
         # Factors this sensor can observe
         self.observable_factors = [
-            "weather",
-            "temperature"
+            "temperature",
+            "weather_condition",
+            "precipitation"
         ]
         
-        # Reliability for each factor
+        # Reliability for each factor (can vary by factor)
         self.factor_reliabilities = {
-            "weather": 0.8,      # Good reliability for weather condition
-            "temperature": 0.95  # Very high reliability for temperature
+            "temperature": 0.95,      # Very high reliability for temperature
+            "weather_condition": 0.9, # High reliability for weather condition
+            "precipitation": 0.85     # Good reliability for precipitation
+        }
+    
+    def get_expected_factors(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Return information about the factors this sensor expects to provide data for.
+        
+        This method is used for automatic factor creation when registering the sensor.
+        
+        Returns:
+            Dictionary mapping factor names to information about each factor
+        """
+        return {
+            "temperature": {
+                "type": "continuous",
+                "default_value": 22.0,     # 22°C / 72°F
+                "uncertainty": 1.0,
+                "lower_bound": -50.0,      # Very cold
+                "upper_bound": 60.0,       # Very hot
+                "description": "Temperature in Celsius"
+            },
+            "weather_condition": {
+                "type": "categorical",
+                "default_value": "sunny",
+                "categories": ["sunny", "cloudy", "rainy", "snowy", "foggy", "stormy"],
+                "description": "Current weather condition"
+            },
+            "precipitation": {
+                "type": "continuous",
+                "default_value": 0.0,
+                "uncertainty": 0.5,
+                "lower_bound": 0.0,        # No precipitation
+                "upper_bound": 100.0,      # Heavy precipitation
+                "description": "Precipitation amount in mm"
+            }
         }
     
     def fetch_data(self, environment: Any = None) -> Dict[str, TensorType]:
@@ -285,27 +400,13 @@ class WeatherSensor(TFSensor):
         else:
             # Default true values for simulation
             true_values = {
-                "weather": "cloudy",   # True weather condition
-                "temperature": 15.0    # True temperature in Celsius
+                "temperature": 15.0,    # True temperature in Celsius
+                "weather_condition": "cloudy",   # True weather condition
+                "precipitation": 5.0          # True precipitation amount in mm
             }
         
         # Add realistic noise to observations
         observations = {}
-        
-        # Add noise to weather condition
-        if "weather" in self.observable_factors:
-            true_weather = true_values.get("weather", "clear")
-            conditions = ["clear", "cloudy", "stormy"]
-            
-            # Sometimes we might observe the wrong condition
-            weather_noise = np.random.random()
-            if weather_noise < self.factor_reliabilities.get("weather", 0.8):
-                # Correct observation
-                observations["weather"] = true_weather
-            else:
-                # Observation error - randomly pick a different condition
-                other_conditions = [c for c in conditions if c != true_weather]
-                observations["weather"] = np.random.choice(other_conditions)
         
         # Add noise to temperature
         if "temperature" in self.observable_factors:
@@ -313,5 +414,27 @@ class WeatherSensor(TFSensor):
             temp_noise = np.random.normal(0, 0.5)  # Small Gaussian noise
             observed_temp = true_temp + temp_noise
             observations["temperature"] = float(observed_temp)
+        
+        # Add noise to weather condition
+        if "weather_condition" in self.observable_factors:
+            true_weather = true_values.get("weather_condition", "clear")
+            conditions = ["clear", "cloudy", "stormy"]
+            
+            # Sometimes we might observe the wrong condition
+            weather_noise = np.random.random()
+            if weather_noise < self.factor_reliabilities.get("weather_condition", 0.8):
+                # Correct observation
+                observations["weather_condition"] = true_weather
+            else:
+                # Observation error - randomly pick a different condition
+                other_conditions = [c for c in conditions if c != true_weather]
+                observations["weather_condition"] = np.random.choice(other_conditions)
+        
+        # Add noise to precipitation
+        if "precipitation" in self.observable_factors:
+            true_precipitation = true_values.get("precipitation", 0.0)
+            precipitation_noise = np.random.normal(0, 0.5)  # Small Gaussian noise
+            observed_precipitation = max(true_precipitation + precipitation_noise, 0)
+            observations["precipitation"] = float(observed_precipitation)
         
         return observations 
