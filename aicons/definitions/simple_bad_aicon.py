@@ -18,15 +18,13 @@ tfb = tfp.bijectors
 # Fix imports - add action_space and utility_function imports
 from aicons.bayesbrainGPT.bayes_brain import BayesBrain
 from aicons.bayesbrainGPT.decision_making.action_space import (
-    ActionDimension, ActionSpace, 
+    ActionSpace, 
     create_budget_allocation_space,
     create_time_budget_allocation_space,
     create_multi_campaign_action_space,
     create_marketing_ads_space
 )
-from aicons.bayesbrainGPT.utility_function.utility_function import (
-    UtilityFunction, TensorFlowUtilityFunction,
-    MarketingROIUtility, ConstrainedMarketingROI, WeatherDependentMarketingROI,
+from aicons.bayesbrainGPT.utility_function.utility_function import (TensorFlowUtilityFunction,
     create_utility_function, create_custom_marketing_utility
 )
 
@@ -62,10 +60,6 @@ class SimpleBadAIcon:
             "last_update_time": None,
             "updates": []
         }
-        
-        # Action space
-        self.action_space = None
-        self.utility_function = None
     
     
     def add_factor_continuous(self, name: str, value: float, uncertainty: float = 0.1, 
@@ -436,6 +430,24 @@ class SimpleBadAIcon:
         """
         return self.brain.sample_action()
     
+    def get_action_space(self):
+        """
+        Get the action space from the brain.
+        
+        Returns:
+            The brain's action space
+        """
+        return self.brain.get_action_space()
+    
+    def get_utility_function(self):
+        """
+        Get the utility function from the brain.
+        
+        Returns:
+            The brain's utility function
+        """
+        return self.brain.get_utility_function()
+    
     def find_best_allocation(self, num_samples: int = 100):
         """
         Find the best allocation based on the utility function.
@@ -458,6 +470,13 @@ class SimpleBadAIcon:
         Returns:
             Tuple of (best_action, utility)
         """
+        # Check for action space and utility function
+        if self.get_action_space() is None:
+            raise ValueError("Cannot perceive and decide without an action space. Call create_action_space() first.")
+            
+        if self.get_utility_function() is None:
+            raise ValueError("Cannot perceive and decide without a utility function. Call create_utility_function() first.")
+            
         return self.brain.perceive_and_decide(environment)
     
     def get_state(self, format_nicely: bool = False):
@@ -633,6 +652,13 @@ class SimpleBadAIcon:
         Returns:
             Dictionary with run statistics
         """
+        # First check for action space and utility function
+        if self.get_action_space() is None:
+            raise ValueError("Cannot run AIcon without an action space. Call create_action_space() first.")
+            
+        if self.get_utility_function() is None:
+            raise ValueError("Cannot run AIcon without a utility function. Call create_utility_function() first.")
+            
         # Check if we have perception and sensors
         if not hasattr(self.brain, 'perception'):
             from aicons.bayesbrainGPT.perception.perception import BayesianPerception
@@ -645,7 +671,7 @@ class SimpleBadAIcon:
         if not state_factors:
             print(f"No state factors (priors) defined. Add factors before running.")
             return self.run_stats
-            
+        
         # Reset run statistics
         self.run_stats = {
             "iterations": 0,
@@ -759,6 +785,8 @@ class SimpleBadAIcon:
         Returns:
             The created ActionSpace
         """
+        action_space = None
+        
         if space_type == 'marketing':
             # Create a marketing ads space
             total_budget = kwargs.get('total_budget', 1000.0)
@@ -767,7 +795,7 @@ class SimpleBadAIcon:
             min_budget = kwargs.get('min_budget', 0.0)
             ad_names = kwargs.get('ad_names', None)
             
-            self.action_space = create_marketing_ads_space(
+            action_space = create_marketing_ads_space(
                 total_budget=total_budget,
                 num_ads=num_ads,
                 budget_step=budget_step,
@@ -782,7 +810,7 @@ class SimpleBadAIcon:
             budget_step = kwargs.get('budget_step', 100.0)
             min_budget = kwargs.get('min_budget', 0.0)
             
-            self.action_space = create_budget_allocation_space(
+            action_space = create_budget_allocation_space(
                 total_budget=total_budget,
                 num_ads=num_ads,
                 budget_step=budget_step,
@@ -797,7 +825,7 @@ class SimpleBadAIcon:
             budget_step = kwargs.get('budget_step', 100.0)
             min_budget = kwargs.get('min_budget', 0.0)
             
-            self.action_space = create_time_budget_allocation_space(
+            action_space = create_time_budget_allocation_space(
                 total_budget=total_budget,
                 num_ads=num_ads,
                 num_days=num_days,
@@ -810,7 +838,7 @@ class SimpleBadAIcon:
             campaigns = kwargs.get('campaigns', {})
             budget_step = kwargs.get('budget_step', 100.0)
             
-            self.action_space = create_multi_campaign_action_space(
+            action_space = create_multi_campaign_action_space(
                 campaigns=campaigns,
                 budget_step=budget_step
             )
@@ -820,7 +848,7 @@ class SimpleBadAIcon:
             dimensions = kwargs.get('dimensions', [])
             constraints = kwargs.get('constraints', [])
             
-            self.action_space = ActionSpace(
+            action_space = ActionSpace(
                 dimensions=dimensions,
                 constraints=constraints
             )
@@ -829,11 +857,11 @@ class SimpleBadAIcon:
             raise ValueError(f"Unknown action space type: {space_type}")
             
         # Store the action space in the brain
-        self.brain.action_space = self.action_space
+        self.brain.set_action_space(action_space)
         
-        print(f"Created {space_type} action space with {len(self.action_space.dimensions)} dimensions")
+        print(f"Created {space_type} action space with {len(action_space.dimensions)} dimensions")
         
-        return self.action_space
+        return action_space
     
     def create_utility_function(self, utility_type: str = 'marketing_roi', **kwargs):
         """
@@ -852,30 +880,31 @@ class SimpleBadAIcon:
         """
         # If using custom marketing utility, use the specialized creator
         if utility_type == 'custom_marketing':
-            self.utility_function = create_custom_marketing_utility(**kwargs)
+            utility_function = create_custom_marketing_utility(**kwargs)
         else:
             # For predefined utility types, use the factory
             # Add action space dimensions if they exist
-            if self.action_space:
-                kwargs['num_ads'] = len([d for d in self.action_space.dimensions 
+            action_space = self.get_action_space()
+            if action_space:
+                kwargs['num_ads'] = len([d for d in action_space.dimensions 
                                         if d.name.endswith('_budget')])
                 kwargs['ad_names'] = [d.name.replace('_budget', '') 
-                                    for d in self.action_space.dimensions 
+                                    for d in action_space.dimensions 
                                     if d.name.endswith('_budget')]
             
             # Create the utility function
-            self.utility_function = create_utility_function(utility_type, **kwargs)
+            utility_function = create_utility_function(utility_type, **kwargs)
         
-        # Check if this is a TensorFlow utility
-        self.is_tensorflow_utility = isinstance(self.utility_function, TensorFlowUtilityFunction)
+        # Check if this is a TensorFlow utility and store the info
+        is_tensorflow_utility = isinstance(utility_function, TensorFlowUtilityFunction)
         
-        # Store in brain for consistency
-        self.brain.utility_function = self.utility_function
+        # Store in brain
+        self.brain.set_utility_function(utility_function)
         
-        print(f"Created {utility_type} utility function: {self.utility_function.name}")
-        print(f"Description: {self.utility_function.description}")
+        print(f"Created {utility_type} utility function: {utility_function.name}")
+        print(f"Description: {utility_function.description}")
         
-        return self.utility_function
+        return utility_function
     
     def find_best_action(self, num_samples: int = 100, use_gradient: bool = False):
         """
@@ -888,11 +917,14 @@ class SimpleBadAIcon:
         Returns:
             Tuple of (best_allocation, utility)
         """
-        if self.action_space is None:
-            raise ValueError("No action space defined. Call create_action_space() first.")
+        action_space = self.get_action_space()
+        utility_function = self.get_utility_function()
+        
+        if action_space is None:
+            raise ValueError("Cannot find best action without an action space. Call create_action_space() first.")
             
-        if self.utility_function is None:
-            raise ValueError("No utility function defined. Call create_utility_function() first.")
+        if utility_function is None:
+            raise ValueError("Cannot find best action without a utility function. Call create_utility_function() first.")
             
         # Get posterior samples
         posterior_samples = self.get_posterior_samples()
@@ -900,8 +932,11 @@ class SimpleBadAIcon:
         if not posterior_samples:
             raise ValueError("No posterior samples available. Run perception first.")
             
+        # Check if this is a TensorFlow utility
+        is_tensorflow_utility = isinstance(utility_function, TensorFlowUtilityFunction)
+        
         # Convert posterior samples to TensorFlow format if needed
-        if self.is_tensorflow_utility:
+        if is_tensorflow_utility:
             # Convert to TensorFlow tensors
             tf_samples = {}
             for param_name, samples in posterior_samples.items():
@@ -911,27 +946,27 @@ class SimpleBadAIcon:
                     tf_samples[param_name] = samples
                     
             # Use TensorFlow optimization
-            if use_gradient and not self.action_space.is_discrete:
+            if use_gradient and not action_space.is_discrete:
                 # Use gradient-based optimization
                 print("Using gradient-based optimization...")
-                best_action = self.action_space.optimize_action_tf(
-                    self.utility_function.evaluate_tf, tf_samples, num_steps=100
+                best_action = action_space.optimize_action_tf(
+                    utility_function.evaluate_tf, tf_samples, num_steps=100
                 )
                 # Calculate utility for the best action
-                action_tensor = tf.constant([best_action[dim.name] for dim in self.action_space.dimensions])
-                utility = tf.reduce_mean(self.utility_function.evaluate_tf(action_tensor, tf_samples)).numpy()
+                action_tensor = tf.constant([best_action[dim.name] for dim in action_space.dimensions])
+                utility = tf.reduce_mean(utility_function.evaluate_tf(action_tensor, tf_samples)).numpy()
                 return best_action, utility
             else:
                 # Use enumeration or sampling
                 print("Using action enumeration with TensorFlow evaluation...")
-                return self.action_space.evaluate_actions_tf(
-                    self.utility_function.evaluate_tf, tf_samples, num_actions=num_samples
+                return action_space.evaluate_actions_tf(
+                    utility_function.evaluate_tf, tf_samples, num_actions=num_samples
                 )
         else:
             # Use standard numpy evaluation
             print("Using action enumeration with NumPy evaluation...")
-            return self.action_space.evaluate_actions(
-                self.utility_function.evaluate, posterior_samples, num_actions=num_samples
+            return action_space.evaluate_actions(
+                utility_function.evaluate, posterior_samples, num_actions=num_samples
             )
     
     def sample_action(self):
@@ -941,10 +976,11 @@ class SimpleBadAIcon:
         Returns:
             A randomly sampled action, or None if no action space is configured
         """
-        if self.action_space is None:
-            raise ValueError("No action space defined. Call create_action_space() first.")
+        action_space = self.get_action_space()
+        if action_space is None:
+            raise ValueError("Cannot sample action without an action space. Call create_action_space() first.")
             
-        return self.action_space.sample()
+        return action_space.sample()
     
     def create_hierarchical_model_tf(self, num_ads=2, num_days=3):
         """
@@ -984,8 +1020,8 @@ class SimpleBadAIcon:
         # Store the model for use in perception and decision-making
         self.tf_model = joint_dist
         
-        # Create a matching action space
-        if self.action_space is None:
+        # Create a matching action space if needed
+        if self.get_action_space() is None:
             self.create_action_space(
                 space_type='marketing',
                 total_budget=1000.0,
@@ -993,8 +1029,8 @@ class SimpleBadAIcon:
                 budget_step=10.0
             )
             
-        # Create a matching utility function
-        if self.utility_function is None:
+        # Create a matching utility function if needed
+        if self.get_utility_function() is None:
             self.create_utility_function(
                 utility_type='marketing_roi',
                 revenue_per_sale=10.0,
