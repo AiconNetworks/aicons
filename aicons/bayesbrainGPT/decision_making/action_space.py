@@ -433,6 +433,35 @@ class ActionSpace:
         # This is a simplified implementation - would need customization
         # for specific constraint types
 
+    def get_dimensions_info(self) -> Dict[str, Any]:
+        """
+        Get structured information about the dimensions in this action space.
+        
+        Returns:
+            A dictionary with information about the dimensions:
+            - num_dimensions: Number of dimensions
+            - dimension_names: List of dimension names
+            - dimension_types: List of dimension types
+            - item_ids: List of item IDs if available
+            - ad_names: Dictionary of ad names if available
+        """
+        # Basic dimension information
+        dimensions_info = {
+            "num_dimensions": len(self.dimensions),
+            "dimension_names": [dim.name for dim in self.dimensions],
+            "dimension_types": [dim.dim_type for dim in self.dimensions],
+        }
+        
+        # Add information about item IDs if available
+        if hasattr(self, 'item_ids'):
+            dimensions_info["item_ids"] = self.item_ids
+            
+        # Add information about ad names if available
+        if hasattr(self, 'ad_names'):
+            dimensions_info["ad_names"] = self.ad_names
+            
+        return dimensions_info
+
 
 # Utility functions for creating common action spaces
 
@@ -471,7 +500,91 @@ def create_budget_allocation_space(
     def budget_sum_constraint(action):
         return np.isclose(sum(action.values()), total_budget)
     
-    return ActionSpace(dimensions, constraints=[budget_sum_constraint])
+    # Create action space
+    space = ActionSpace(dimensions, constraints=[budget_sum_constraint])
+    
+    # Add a specialized sampling method for budget allocation
+    def special_budget_sample():
+        """
+        Generate a valid budget allocation that sums to the total budget.
+        Uses a specialized algorithm for budget allocation instead of random sampling.
+        """
+        if num_ads == 0:
+            return {}
+            
+        # Simple case: only one ad gets the entire budget
+        if num_ads == 1:
+            return {dimensions[0].name: total_budget}
+        
+        # Get all dimension names
+        dim_names = [dim.name for dim in dimensions]
+        
+        # If we have a step size, use a step-based approach
+        if budget_step > 0:
+            # Calculate how many steps we need for the full budget
+            num_steps = int(total_budget / budget_step)
+            
+            # Distribute steps randomly among ads
+            remaining_steps = num_steps
+            allocations = {name: min_budget for name in dim_names}
+            
+            # Distribute steps randomly
+            while remaining_steps > 0:
+                # Pick a random ad
+                ad_idx = np.random.randint(0, num_ads)
+                ad_name = dim_names[ad_idx]
+                
+                # Add one step to it
+                allocations[ad_name] += budget_step
+                remaining_steps -= 1
+                
+                # Check we don't exceed max
+                if allocations[ad_name] > total_budget:
+                    allocations[ad_name] = total_budget
+            
+            # Ensure the sum is exactly the total budget by adjusting the last allocation
+            current_sum = sum(allocations.values())
+            if not np.isclose(current_sum, total_budget):
+                # Pick the first ad with enough room to adjust
+                for name in dim_names:
+                    adjustment = total_budget - current_sum
+                    new_value = allocations[name] + adjustment
+                    
+                    # Check if this is a valid adjustment
+                    if new_value >= min_budget and new_value <= total_budget:
+                        allocations[name] = new_value
+                        break
+            
+            return allocations
+        else:
+            # No step constraints - use a normalized random approach
+            # Generate random weights
+            weights = np.random.random(num_ads)
+            weights /= weights.sum()  # Normalize to sum to 1
+            
+            # Distribute budget according to weights
+            allocations = {}
+            for i, name in enumerate(dim_names):
+                allocations[name] = weights[i] * total_budget
+            
+            return allocations
+    
+    # Store the specialized sampling method
+    space.special_sample = special_budget_sample
+    
+    # Override the regular sample method
+    original_sample = space.sample
+    def budget_aware_sample():
+        # Try the specialized sampling first
+        try:
+            return special_budget_sample()
+        except:
+            # Fall back to original method
+            return original_sample()
+    
+    space.sample = budget_aware_sample
+    
+    return space
 
 
 def create_time_budget_allocation_space(

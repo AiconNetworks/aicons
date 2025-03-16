@@ -238,4 +238,23 @@ class BayesBrain:
             self.update_posterior_samples(sensor_data, default_update)
         
         # Find the best action
-        return self.find_best_action() 
+        return self.find_best_action()
+    
+    def get_action_dimensions(self) -> Dict[str, Any]:
+        """
+        Get information about the dimensions of the action space.
+        
+        Returns:
+            A dictionary with information about the action space dimensions
+        """
+        if self.action_space is None:
+            # Return empty dimension info rather than None
+            return {
+                "num_dimensions": 0,
+                "dimension_names": [],
+                "dimension_types": [],
+                "error": "No action space has been created yet. Call create_action_space() first."
+            }
+            
+        # Delegate to the ActionSpace's method
+        return self.action_space.get_dimensions_info() 

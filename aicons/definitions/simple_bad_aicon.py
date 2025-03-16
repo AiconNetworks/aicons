@@ -1086,27 +1086,13 @@ class SimpleBadAIcon:
         Get information about the dimensions of the action space.
         
         Returns:
-            A dictionary with information about the action space dimensions,
-            or None if no action space has been created yet.
+            A dictionary with information about the action space dimensions
         """
-        action_space = self.get_action_space()
-        if action_space is None:
-            print("No action space has been created yet. Call create_action_space() first.")
-            return None
-            
-        # Get basic dimension information
-        dimensions_info = {
-            "num_dimensions": len(action_space.dimensions),
-            "dimension_names": [dim.name for dim in action_space.dimensions],
-            "dimension_types": [dim.dim_type for dim in action_space.dimensions],
-        }
+        # Delegate to BayesBrain's method
+        dimensions_info = self.brain.get_action_dimensions()
         
-        # Add information about item IDs if this is a budget allocation space
-        if hasattr(action_space, 'item_ids'):
-            dimensions_info["item_ids"] = action_space.item_ids
-            
-        # Add information about ad names if available
-        if hasattr(action_space, 'ad_names'):
-            dimensions_info["ad_names"] = action_space.ad_names
+        # Check for error message
+        if "error" in dimensions_info:
+            print(dimensions_info["error"])
             
         return dimensions_info 
