@@ -598,6 +598,38 @@ class MetaAdsSalesSensor(TFSensor):
             "result_type": "purchase"
         }
     
+    def extract_ad_factors(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Extract individual factors for each ad to better integrate with perception system.
+        
+        Args:
+            data: Raw data from run() method
+            
+        Returns:
+            Dictionary where each key is a factor name and each value is (value, reliability)
+        """
+        factors = {}
+        reliability = self.default_reliability
+        
+        # Add campaign-level metrics
+        factors["purchases"] = (data["purchases"], reliability)
+        factors["add_to_carts"] = (data["add_to_carts"], reliability)
+        factors["initiated_checkouts"] = (data["initiated_checkouts"], reliability)
+        
+        # Add individual ad metrics as separate factors
+        for ad_id, ad_data in data["ad_performances"].items():
+            ad_prefix = f"ad_{ad_id}"
+            
+            # Only include numerical metrics as factors
+            factors[f"{ad_prefix}_purchases"] = (ad_data["purchases"], reliability)
+            factors[f"{ad_prefix}_add_to_carts"] = (ad_data["add_to_carts"], reliability)
+            factors[f"{ad_prefix}_initiated_checkouts"] = (ad_data["initiated_checkouts"], reliability)
+            factors[f"{ad_prefix}_impressions"] = (ad_data["impressions"], reliability)
+            factors[f"{ad_prefix}_clicks"] = (ad_data["clicks"], reliability)
+            factors[f"{ad_prefix}_spend"] = (ad_data["spend"], reliability)
+        
+        return factors
+    
     def fetch_data(self, environment: Any = None) -> Dict[str, TensorType]:
         """
         Fetch Meta Ads sales performance data for all ads in the campaign.
@@ -611,20 +643,57 @@ class MetaAdsSalesSensor(TFSensor):
         # Get current snapshot from run method
         data = self.run()
         
-        # Convert dictionaries to string representations for tensor compatibility
-        ad_performances_str = json.dumps(data["ad_performances"])
-        adset_performances_str = json.dumps(data["adset_performances"])
+        # For compatibility with both approaches
+        if environment and isinstance(environment, dict) and environment.get("use_individual_factors", False):
+            # Extract individual factors for better perception integration
+            extracted_factors = self.extract_ad_factors(data)
+            
+            # Convert to proper tensor types
+            result = {}
+            for factor_name, (value, reliability) in extracted_factors.items():
+                if isinstance(value, (int, float)):
+                    # Use the appropriate numeric type
+                    tensor_value = np.float32(value) if isinstance(value, float) else np.int32(value)
+                else:
+                    # Keep strings as is
+                    tensor_value = value
+                
+                # Store the value (not the tuple) for TF compatibility
+                result[factor_name] = tensor_value
+            
+            return result
+        else:
+            # Use the original approach for backward compatibility
+            # Convert dictionaries to string representations for tensor compatibility
+            ad_performances_str = json.dumps(data["ad_performances"])
+            adset_performances_str = json.dumps(data["adset_performances"])
+            
+            # Convert to proper tensor types
+            return {
+                "ad_performances": ad_performances_str,
+                "adset_performances": adset_performances_str,
+                "purchases": np.float32(data["purchases"]),
+                "add_to_carts": np.float32(data["add_to_carts"]),
+                "initiated_checkouts": np.float32(data["initiated_checkouts"]),
+                "results": np.int32(data["results"]),
+                "result_type": data["result_type"]
+            }
+    
+    def get_data(self, environment: Any = None) -> Dict[str, Tuple[Any, float]]:
+        """
+        Get sensor data in the format expected by perception system.
         
-        # Convert to proper tensor types
-        return {
-            "ad_performances": ad_performances_str,
-            "adset_performances": adset_performances_str,
-            "purchases": np.float32(data["purchases"]),
-            "add_to_carts": np.float32(data["add_to_carts"]),
-            "initiated_checkouts": np.float32(data["initiated_checkouts"]),
-            "results": np.int32(data["results"]),
-            "result_type": data["result_type"]
-        }
+        Args:
+            environment: Optional environment data
+            
+        Returns:
+            Dictionary mapping factor names to (value, reliability) tuples
+        """
+        # Get raw data
+        data = self.run()
+        
+        # Extract individual factors with reliability values
+        return self.extract_ad_factors(data)
         
     def get_expected_factors(self) -> Dict[str, Dict[str, Any]]:
         """
@@ -635,52 +704,79 @@ class MetaAdsSalesSensor(TFSensor):
         Returns:
             Dictionary mapping factor names to information about each factor
         """
-        return {
-            "ad_performances": {
-                "type": "json",
-                "default_value": "{}",
-                "description": "Performance metrics for each ad in the campaign"
-            },
-            "adset_performances": {
-                "type": "json",
-                "default_value": "{}",
-                "description": "Performance metrics for each ad set in the campaign"
-            },
+        # Define the base campaign-level factors with hierarchical relationships
+        factors = {
             "purchases": {
                 "type": "continuous",
                 "default_value": 0.0,
                 "uncertainty": 1.0,
                 "lower_bound": 0.0,
-                "description": "Total number of purchases from ads"
+                "description": "Total number of purchases from ads",
+                "hierarchy": {
+                    "role": "aggregate", 
+                    "child_pattern": "ad_*_purchases",
+                    "aggregation": "sum"
+                }
             },
             "add_to_carts": {
                 "type": "continuous",
                 "default_value": 0.0,
                 "uncertainty": 5.0,
                 "lower_bound": 0.0,
-                "description": "Total number of add to cart events from ads"
+                "description": "Total number of add to cart events from ads",
+                "hierarchy": {
+                    "role": "aggregate", 
+                    "child_pattern": "ad_*_add_to_carts",
+                    "aggregation": "sum"
+                }
             },
             "initiated_checkouts": {
                 "type": "continuous",
                 "default_value": 0.0,
                 "uncertainty": 2.0,
                 "lower_bound": 0.0,
-                "description": "Total number of checkout initiations from ads"
-            },
-            "results": {
-                "type": "discrete",
-                "default_value": 0,
-                "lower_bound": 0,
-                "upper_bound": 1000,
-                "description": "Total number of results (typically purchases) from ads"
-            },
-            "result_type": {
-                "type": "categorical",
-                "default_value": "purchase",
-                "categories": ["purchase", "add_to_cart", "checkout"],
-                "description": "Type of result being tracked in ads"
+                "description": "Total number of checkout initiations from ads",
+                "hierarchy": {
+                    "role": "aggregate", 
+                    "child_pattern": "ad_*_initiated_checkouts",
+                    "aggregation": "sum"
+                }
             }
         }
+        
+        # Add common ad-level factor definitions - only for numerical metrics
+        ad_metrics = [
+            # Conversion metrics
+            {"suffix": "purchases", "type": "continuous", "default": 0.0, "uncertainty": 1.0, "description": "Number of purchases from this ad"},
+            {"suffix": "add_to_carts", "type": "continuous", "default": 0.0, "uncertainty": 1.0, "description": "Number of add to carts from this ad"},
+            {"suffix": "initiated_checkouts", "type": "continuous", "default": 0.0, "uncertainty": 1.0, "description": "Number of checkout initiations from this ad"},
+            
+            # Performance metrics
+            {"suffix": "impressions", "type": "continuous", "default": 0.0, "uncertainty": 5.0, "description": "Number of impressions for this ad"},
+            {"suffix": "clicks", "type": "continuous", "default": 0.0, "uncertainty": 2.0, "description": "Number of clicks for this ad"},
+            {"suffix": "spend", "type": "continuous", "default": 0.0, "uncertainty": 1.0, "description": "Amount spent on this ad"}
+        ]
+        
+        # Add a pattern for each metric that will match any ad
+        for metric in ad_metrics:
+            pattern = f"ad_*_{metric['suffix']}"
+            factors[pattern] = {
+                "type": metric["type"],
+                "default_value": metric["default"],
+                "description": metric["description"],
+                "pattern": True,  # Flag this as a pattern that matches multiple factors
+                "uncertainty": metric["uncertainty"]
+            }
+            
+            # Add hierarchy for child metrics that roll up to campaign total
+            if metric["suffix"] in ["purchases", "add_to_carts", "initiated_checkouts"]:
+                factors[pattern]["hierarchy"] = {
+                    "role": "child",
+                    "parent": metric["suffix"],
+                    "contribution": "direct"
+                }
+        
+        return factors
 
     def get_all_ads(self) -> List[Dict[str, Any]]:
         """
@@ -716,4 +812,131 @@ class MetaAdsSalesSensor(TFSensor):
         active_ads = [ad for ad in all_ads if ad.get("effective_status", "") == "ACTIVE"]
         
         print(f"Found {len(active_ads)} active ads out of {len(all_ads)} total ads")
-        return active_ads 
+        return active_ads
+
+    def mock_run(self, num_adsets=3, num_ads_per_adset=5, include_performance_data=True) -> Dict[str, Any]:
+        """
+        Generate mock data for testing without requiring API access.
+        
+        Args:
+            num_adsets: Number of ad sets to generate
+            num_ads_per_adset: Number of ads per ad set
+            include_performance_data: Whether to include mock performance metrics
+            
+        Returns:
+            Dictionary containing mock metrics for testing
+        """
+        import random
+        
+        # Generate mock adsets
+        adset_performances = {}
+        ad_performances = {}
+        
+        # Possible statuses for variety
+        ad_statuses = ["ACTIVE", "PAUSED"]
+        effective_statuses = ["ACTIVE", "PAUSED", "ADSET_PAUSED", "CAMPAIGN_PAUSED", "DISAPPROVED"]
+        
+        total_purchases = 0
+        total_add_to_carts = 0
+        total_initiated_checkouts = 0
+        
+        # Create mock adsets
+        for adset_index in range(1, num_adsets + 1):
+            adset_id = f"{adset_index}"
+            adset_name = f"Mock Ad Set {adset_index}"
+            
+            # Create empty adset performance entry
+            adset_performances[adset_id] = {
+                "adset_id": adset_id,
+                "adset_name": adset_name,
+                "purchases": 0,
+                "add_to_carts": 0,
+                "initiated_checkouts": 0,
+                "impressions": 0,
+                "clicks": 0,
+                "spend": 0,
+                "ads": []
+            }
+            
+            # Create mock ads for this adset
+            for ad_index in range(1, num_ads_per_adset + 1):
+                ad_id = f"{adset_index}_{ad_index}"  # Remove the "ad_" prefix here
+                ad_name = f"Mock Ad {adset_index}.{ad_index}"
+                
+                # Randomly assign status
+                status = random.choice(ad_statuses)
+                effective_status = status if status == "ACTIVE" else random.choice(effective_statuses)
+                
+                # Create a reference to this ad in the adset
+                adset_performances[adset_id]["ads"].append({
+                    "ad_id": ad_id,
+                    "ad_name": ad_name,
+                    "status": status,
+                    "effective_status": effective_status
+                })
+                
+                # Only add performance data if requested and ad could be active
+                if include_performance_data:
+                    # Generate mock metrics with some randomness but reasonable values
+                    impressions = random.randint(100, 5000) if effective_status != "PAUSED" else 0
+                    clicks = min(impressions, random.randint(0, impressions // 10)) if impressions > 0 else 0
+                    ctr = clicks / impressions if impressions > 0 else 0
+                    spend = round(clicks * random.uniform(0.5, 2.0), 2) if clicks > 0 else 0
+                    
+                    # Conversion metrics - more rare than clicks
+                    add_to_carts = min(clicks, random.randint(0, clicks // 3)) if clicks > 0 else 0
+                    initiated_checkouts = min(add_to_carts, random.randint(0, add_to_carts)) if add_to_carts > 0 else 0
+                    purchases = min(initiated_checkouts, random.randint(0, initiated_checkouts)) if initiated_checkouts > 0 else 0
+                    
+                    # Hourly data (for mock, we'll just use one hour)
+                    hourly_data = [{
+                        "date": "2023-04-15",
+                        "hour_range": "00-01",
+                        "purchases": purchases,
+                        "add_to_carts": add_to_carts,
+                        "initiated_checkouts": initiated_checkouts,
+                        "impressions": impressions,
+                        "clicks": clicks,
+                        "spend": spend,
+                        "purchase_roas": round(purchases * 50 / spend, 2) if spend > 0 and purchases > 0 else 0
+                    }]
+                    
+                    # Create ad performance entry
+                    ad_performances[ad_id] = {
+                        "ad_id": ad_id,
+                        "ad_name": ad_name,
+                        "adset_id": adset_id,
+                        "adset_name": adset_name,
+                        "status": status,
+                        "effective_status": effective_status,
+                        "purchases": purchases,
+                        "add_to_carts": add_to_carts,
+                        "initiated_checkouts": initiated_checkouts,
+                        "impressions": impressions,
+                        "clicks": clicks,
+                        "spend": spend,
+                        "hourly_data": hourly_data
+                    }
+                    
+                    # Update adset totals
+                    adset_performances[adset_id]["purchases"] += purchases
+                    adset_performances[adset_id]["add_to_carts"] += add_to_carts
+                    adset_performances[adset_id]["initiated_checkouts"] += initiated_checkouts
+                    adset_performances[adset_id]["impressions"] += impressions
+                    adset_performances[adset_id]["clicks"] += clicks
+                    adset_performances[adset_id]["spend"] += spend
+                    
+                    # Update campaign totals
+                    total_purchases += purchases
+                    total_add_to_carts += add_to_carts
+                    total_initiated_checkouts += initiated_checkouts
+                    
+        return {
+            "ad_performances": ad_performances,
+            "adset_performances": adset_performances,
+            "purchases": total_purchases,
+            "add_to_carts": total_add_to_carts,
+            "initiated_checkouts": total_initiated_checkouts,
+            "results": total_purchases,
+            "result_type": "purchase"
+        } 
