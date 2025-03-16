@@ -779,8 +779,15 @@ class SimpleBadAIcon:
         Create an action space for the AIcon.
         
         Args:
-            space_type: Type of action space to create ('marketing', 'budget', 'time_budget', 'multi_campaign')
+            space_type: Type of action space to create ('marketing', 'budget', 'budget_allocation', 'time_budget', 'multi_campaign')
             **kwargs: Additional arguments for the specific space type
+                - For 'budget_allocation':
+                  - total_budget: Total budget to allocate
+                  - items: List of ad IDs to use
+                  - min_allocation_percent: Minimum allocation percentage (0.0-1.0)
+                  - max_allocation_percent: Maximum allocation percentage (0.0-1.0)
+                  - step_size: Step size for allocation (as a percentage, e.g., 0.05 for 5%)
+                  - ad_names: Optional dictionary mapping item IDs to display names
             
         Returns:
             The created ActionSpace
@@ -802,6 +809,39 @@ class SimpleBadAIcon:
                 min_budget=min_budget,
                 ad_names=ad_names
             )
+            
+        elif space_type == 'budget_allocation':
+            # Create a budget allocation space for specific ad IDs
+            total_budget = kwargs.get('total_budget', 1000.0)
+            items = kwargs.get('items', [])
+            
+            # Get allocation parameters
+            min_allocation_percent = kwargs.get('min_allocation_percent', 0.0)
+            max_allocation_percent = kwargs.get('max_allocation_percent', 1.0)
+            step_size = kwargs.get('step_size', 0.05)
+            
+            # Convert percentages to absolute budget values
+            min_budget = min_allocation_percent * total_budget
+            budget_step = step_size * total_budget
+            
+            # Use number of items if provided, otherwise use explicit num_ads
+            num_ads = kwargs.get('num_ads', len(items))
+            
+            # Create the budget allocation space
+            action_space = create_budget_allocation_space(
+                total_budget=total_budget,
+                num_ads=num_ads,
+                budget_step=budget_step,
+                min_budget=min_budget
+            )
+            
+            # Store item IDs for later reference
+            action_space.item_ids = items
+            
+            # Store ad names if provided
+            ad_names = kwargs.get('ad_names', None)
+            if ad_names:
+                action_space.ad_names = ad_names
             
         elif space_type == 'budget':
             # Create a simple budget allocation space
@@ -859,7 +899,9 @@ class SimpleBadAIcon:
         # Store the action space in the brain
         self.brain.set_action_space(action_space)
         
-        print(f"Created {space_type} action space with {len(action_space.dimensions)} dimensions")
+        # Get name if provided, otherwise use type
+        name = kwargs.get('name', f"{space_type}_space")
+        print(f"Created {space_type} action space '{name}' with {len(action_space.dimensions)} dimensions")
         
         return action_space
     
@@ -1038,3 +1080,33 @@ class SimpleBadAIcon:
             )
             
         return joint_dist 
+
+    def get_action_dimensions(self):
+        """
+        Get information about the dimensions of the action space.
+        
+        Returns:
+            A dictionary with information about the action space dimensions,
+            or None if no action space has been created yet.
+        """
+        action_space = self.get_action_space()
+        if action_space is None:
+            print("No action space has been created yet. Call create_action_space() first.")
+            return None
+            
+        # Get basic dimension information
+        dimensions_info = {
+            "num_dimensions": len(action_space.dimensions),
+            "dimension_names": [dim.name for dim in action_space.dimensions],
+            "dimension_types": [dim.dim_type for dim in action_space.dimensions],
+        }
+        
+        # Add information about item IDs if this is a budget allocation space
+        if hasattr(action_space, 'item_ids'):
+            dimensions_info["item_ids"] = action_space.item_ids
+            
+        # Add information about ad names if available
+        if hasattr(action_space, 'ad_names'):
+            dimensions_info["ad_names"] = action_space.ad_names
+            
+        return dimensions_info 
