@@ -940,8 +940,9 @@ class SimpleBadAIcon:
         # Check if this is a TensorFlow utility and store the info
         is_tensorflow_utility = isinstance(utility_function, TensorFlowUtilityFunction)
         
-        # Store in brain
-        self.brain.set_utility_function(utility_function)
+        # Store in brain - if it's a TensorFlow utility, we need to adapt it
+        # Store the actual object, not the callable
+        self.brain.utility_function = utility_function
         
         print(f"Created {utility_type} utility function: {utility_function.name}")
         print(f"Description: {utility_function.description}")
@@ -1086,13 +1087,13 @@ class SimpleBadAIcon:
         Get information about the dimensions of the action space.
         
         Returns:
-            A dictionary with information about the action space dimensions
+            A dictionary with information about the action space dimensions,
+            or None if no action space has been created yet.
         """
         # Delegate to BayesBrain's method
         dimensions_info = self.brain.get_action_dimensions()
         
-        # Check for error message
-        if "error" in dimensions_info:
-            print(dimensions_info["error"])
+        if dimensions_info is None:
+            print("No action space has been created yet. Call create_action_space() first.")
             
         return dimensions_info 

@@ -616,9 +616,17 @@ class MetaAdsSalesSensor(TFSensor):
         factors["add_to_carts"] = (data["add_to_carts"], reliability)
         factors["initiated_checkouts"] = (data["initiated_checkouts"], reliability)
         
+        # Collect information about processed ads for debugging
+        processed_ads = []
+        
         # Add individual ad metrics as separate factors
         for ad_id, ad_data in data["ad_performances"].items():
+            # Use clean ad_id without any 'ad_' prefix to ensure consistent naming
+            if ad_id.startswith('ad_'):
+                ad_id = ad_id[3:]  # Remove 'ad_' prefix if present
+                
             ad_prefix = f"ad_{ad_id}"
+            processed_ads.append(ad_id)
             
             # Only include numerical metrics as factors
             factors[f"{ad_prefix}_purchases"] = (ad_data["purchases"], reliability)
@@ -627,6 +635,12 @@ class MetaAdsSalesSensor(TFSensor):
             factors[f"{ad_prefix}_impressions"] = (ad_data["impressions"], reliability)
             factors[f"{ad_prefix}_clicks"] = (ad_data["clicks"], reliability)
             factors[f"{ad_prefix}_spend"] = (ad_data["spend"], reliability)
+        
+        # Print debug information about processed ads
+        print(f"Extracted factors for {len(processed_ads)} ads")
+        if processed_ads:
+            print(f"Example ad IDs: {', '.join(processed_ads[:3])}")
+            print(f"Example factor names: {', '.join(list(factors.keys())[:10])}")
         
         return factors
     
@@ -695,6 +709,68 @@ class MetaAdsSalesSensor(TFSensor):
         # Extract individual factors with reliability values
         return self.extract_ad_factors(data)
         
+    def observe(self, environment: Any = None) -> Dict[str, ObservationType]:
+        """
+        Observe the environment and return observations.
+        
+        This method is called by the perception system to get observations
+        from this sensor. It returns a dictionary mapping factor names to
+        (value, reliability) tuples.
+        
+        Args:
+            environment: Optional environment data to use when observing
+            
+        Returns:
+            Dictionary mapping factor names to (value, reliability) tuples
+        """
+        # Check if we should use extracted factors
+        use_individual_factors = True
+        
+        # Get data from sensor
+        sensor_data = self.fetch_data(environment)
+        
+        if not sensor_data:
+            print(f"No data fetched from {self.name} sensor")
+            return {}
+        
+        # Extract individual factors if requested
+        if use_individual_factors:
+            # Run the extract method first
+            extracted_factors = self.extract_ad_factors(sensor_data)
+            
+            # For any ad-specific factor, ensure proper creation if it doesn't exist
+            observations = {}
+            
+            # For each extracted factor, ensure it's properly named and mapped
+            for factor_name, (value, reliability) in extracted_factors.items():
+                # Map sensor factor name to state factor name
+                mapped_name = self._map_factor_name(factor_name)
+                
+                # Store observation with mapped name
+                observations[mapped_name] = (value, reliability)
+                
+            print(f"Returning {len(observations)} individual observations from {self.name} sensor")
+            return observations
+        else:
+            # Fall back to default behavior
+            observations = {}
+            
+            # For each observable factor, check if it's in fetched data
+            for factor_name in self.observable_factors:
+                if factor_name in sensor_data:
+                    # Convert to tensor if needed
+                    value = sensor_data[factor_name]
+                    reliability = self.factor_reliabilities.get(factor_name, self.default_reliability)
+                    
+                    # Map sensor factor name to state factor name
+                    mapped_name = self._map_factor_name(factor_name)
+                    
+                    # Store observation with mapped name
+                    observations[mapped_name] = (value, reliability)
+            
+            print(f"Returning {len(observations)} observations from {self.name} sensor")
+            return observations
+    
     def get_expected_factors(self) -> Dict[str, Dict[str, Any]]:
         """
         Return information about the factors this sensor expects to provide data for.
@@ -704,6 +780,19 @@ class MetaAdsSalesSensor(TFSensor):
         Returns:
             Dictionary mapping factor names to information about each factor
         """
+        # Fetch active ads first to get actual ad IDs
+        active_ads = []
+        if self.use_real_data:
+            try:
+                active_ads = self.get_active_ads()
+                # Print active ads for debugging
+                print(f"Found {len(active_ads)} active ads")
+                for ad in active_ads:
+                    print(f"- Ad ID: {ad['ad_id']}, Name: {ad['ad_name']}")
+            except Exception as e:
+                print(f"Error fetching active ads: {e}")
+                active_ads = []
+        
         # Define the base campaign-level factors with hierarchical relationships
         factors = {
             "purchases": {
@@ -711,71 +800,67 @@ class MetaAdsSalesSensor(TFSensor):
                 "default_value": 0.0,
                 "uncertainty": 1.0,
                 "lower_bound": 0.0,
-                "description": "Total number of purchases from ads",
-                "hierarchy": {
-                    "role": "aggregate", 
-                    "child_pattern": "ad_*_purchases",
-                    "aggregation": "sum"
-                }
+                "description": "Total number of purchases from ads"
             },
             "add_to_carts": {
                 "type": "continuous",
                 "default_value": 0.0,
                 "uncertainty": 5.0,
                 "lower_bound": 0.0,
-                "description": "Total number of add to cart events from ads",
-                "hierarchy": {
-                    "role": "aggregate", 
-                    "child_pattern": "ad_*_add_to_carts",
-                    "aggregation": "sum"
-                }
+                "description": "Total number of add to cart events from ads"
             },
             "initiated_checkouts": {
                 "type": "continuous",
                 "default_value": 0.0,
                 "uncertainty": 2.0,
                 "lower_bound": 0.0,
-                "description": "Total number of checkout initiations from ads",
-                "hierarchy": {
-                    "role": "aggregate", 
-                    "child_pattern": "ad_*_initiated_checkouts",
-                    "aggregation": "sum"
-                }
+                "description": "Total number of checkout initiations from ads"
             }
         }
         
-        # Add common ad-level factor definitions - only for numerical metrics
-        ad_metrics = [
+        # Define the metrics we want to track for each ad
+        ad_metric_specs = [
             # Conversion metrics
             {"suffix": "purchases", "type": "continuous", "default": 0.0, "uncertainty": 1.0, "description": "Number of purchases from this ad"},
-            {"suffix": "add_to_carts", "type": "continuous", "default": 0.0, "uncertainty": 1.0, "description": "Number of add to carts from this ad"},
-            {"suffix": "initiated_checkouts", "type": "continuous", "default": 0.0, "uncertainty": 1.0, "description": "Number of checkout initiations from this ad"},
-            
-            # Performance metrics
-            {"suffix": "impressions", "type": "continuous", "default": 0.0, "uncertainty": 5.0, "description": "Number of impressions for this ad"},
-            {"suffix": "clicks", "type": "continuous", "default": 0.0, "uncertainty": 2.0, "description": "Number of clicks for this ad"},
-            {"suffix": "spend", "type": "continuous", "default": 0.0, "uncertainty": 1.0, "description": "Amount spent on this ad"}
+            {"suffix": "add_to_carts", "type": "continuous", "default": 0.0, "uncertainty": 5.0, "description": "Number of add to cart events from this ad"},
+            {"suffix": "initiated_checkouts", "type": "continuous", "default": 0.0, "uncertainty": 2.0, "description": "Number of checkout initiations from this ad"},
+            # Impression and click metrics
+            {"suffix": "impressions", "type": "continuous", "default": 0.0, "uncertainty": 100.0, "description": "Number of impressions for this ad"},
+            {"suffix": "clicks", "type": "continuous", "default": 0.0, "uncertainty": 10.0, "description": "Number of clicks for this ad"},
+            {"suffix": "spend", "type": "continuous", "default": 0.0, "uncertainty": 10.0, "description": "Amount spent on this ad"}
         ]
         
-        # Add a pattern for each metric that will match any ad
-        for metric in ad_metrics:
-            pattern = f"ad_*_{metric['suffix']}"
-            factors[pattern] = {
-                "type": metric["type"],
-                "default_value": metric["default"],
-                "description": metric["description"],
-                "pattern": True,  # Flag this as a pattern that matches multiple factors
-                "uncertainty": metric["uncertainty"]
-            }
-            
-            # Add hierarchy for child metrics that roll up to campaign total
-            if metric["suffix"] in ["purchases", "add_to_carts", "initiated_checkouts"]:
-                factors[pattern]["hierarchy"] = {
-                    "role": "child",
-                    "parent": metric["suffix"],
-                    "contribution": "direct"
+        # If we have actual ad IDs, create specific factors for them
+        if active_ads:
+            # Create specific factors for each active ad
+            for ad in active_ads:
+                ad_id = ad['ad_id']
+                for metric in ad_metric_specs:
+                    factor_name = f"ad_{ad_id}_{metric['suffix']}"
+                    factors[factor_name] = {
+                        "type": metric["type"],
+                        "default_value": metric["default"],
+                        "uncertainty": metric["uncertainty"],
+                        "lower_bound": 0.0,
+                        "description": f"{metric['description']} (ID: {ad_id})"
+                    }
+            # Print number of factors for debugging
+            print(f"Number of factors: {len(factors)}")
+            print(f"Factor names: {', '.join(list(factors.keys())[:10])}...")
+        else:
+            # If no active ads found, fall back to generic pattern with wildcard
+            # This is a fallback for when we can't get real ad data
+            for metric in ad_metric_specs:
+                factor_name = f"ad_*_{metric['suffix']}"
+                factors[factor_name] = {
+                    "type": metric["type"],
+                    "default_value": metric["default"],
+                    "uncertainty": metric["uncertainty"],
+                    "lower_bound": 0.0,
+                    "description": f"{metric['description']} (generic pattern)"
                 }
-        
+            print("Using generic ad patterns - WILL NEED UPDATE with real ad data")
+            
         return factors
 
     def get_all_ads(self) -> List[Dict[str, Any]]:

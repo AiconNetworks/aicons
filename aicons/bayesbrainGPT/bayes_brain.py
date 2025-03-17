@@ -185,12 +185,39 @@ class BayesBrain:
         best_action = None
         best_utility = float('-inf')
         
+        # Get posterior samples
+        if hasattr(self, 'perception') and hasattr(self.perception, 'posterior_samples'):
+            posterior_samples = self.perception.posterior_samples
+        else:
+            posterior_samples = {}
+        
         # Try a reasonable number of samples to find a good action
         num_samples = min(num_samples, self.action_space.get_size() if hasattr(self.action_space, 'get_size') else num_samples)
         
         for _ in range(num_samples):
             action = self.action_space.sample()
-            utility = self.utility_function(action)
+            
+            # Check if utility_function is a callable function or an object with evaluate method
+            if callable(self.utility_function):
+                # Call it directly if it's a function
+                utility = self.utility_function(action)
+            elif hasattr(self.utility_function, 'evaluate'):
+                # If it's an object with evaluate method, call that method
+                if posterior_samples:
+                    # If we have posterior samples, use expected_utility method
+                    if hasattr(self.utility_function, 'expected_utility'):
+                        utility = self.utility_function.expected_utility(action, posterior_samples)
+                    else:
+                        # Extract a sample to use with evaluate
+                        sample = {k: v[0] if len(v) > 0 else 0.0 for k, v in posterior_samples.items()}
+                        utility = self.utility_function.evaluate(action, sample)
+                else:
+                    # Create empty sample
+                    empty_sample = {}
+                    utility = self.utility_function.evaluate(action, empty_sample)
+            else:
+                # If we can't use it, return a default value
+                utility = 0.0
             
             if utility > best_utility:
                 best_utility = utility
@@ -245,16 +272,11 @@ class BayesBrain:
         Get information about the dimensions of the action space.
         
         Returns:
-            A dictionary with information about the action space dimensions
+            A dictionary with information about the action space dimensions,
+            or None if no action space has been created yet.
         """
         if self.action_space is None:
-            # Return empty dimension info rather than None
-            return {
-                "num_dimensions": 0,
-                "dimension_names": [],
-                "dimension_types": [],
-                "error": "No action space has been created yet. Call create_action_space() first."
-            }
+            return None
             
         # Delegate to the ActionSpace's method
         return self.action_space.get_dimensions_info() 
