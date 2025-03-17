@@ -166,30 +166,76 @@ class BayesBrain:
             return None
         return self.action_space.sample()
     
-    def find_best_action(self, num_samples: Optional[int] = None) -> Tuple[Optional[Dict[str, Any]], float]:
+    def find_best_action(self, num_samples: Optional[int] = None, use_gradient: bool = False) -> Tuple[Optional[Dict[str, Any]], float]:
         """
         Find the best action using the utility function
         
         Args:
             num_samples: Number of samples to try when searching for the best action
+            use_gradient: Whether to use gradient-based optimization (for TensorFlow utility)
             
         Returns:
             Tuple of (best_action, best_utility), where best_action is None if no valid action is found
         """
-        if self.action_space is None or self.utility_function is None:
+        if self.action_space is None:
             return None, 0.0
         
+        if self.utility_function is None:
+            return None, 0.0
+            
         if num_samples is None:
             num_samples = self.decision_params["num_samples"]
         
+        # Get posterior samples - handle both direct access and perception component
+        posterior_samples = {}
+        if hasattr(self, 'posterior_samples') and self.posterior_samples:
+            posterior_samples = self.posterior_samples
+        elif hasattr(self, 'perception') and hasattr(self.perception, 'posterior_samples'):
+            posterior_samples = self.perception.posterior_samples
+            
+        # Check if this is a TensorFlow utility
+        is_tensorflow_utility = hasattr(self.utility_function, 'evaluate_tf')
+        
+        # If we have a TensorFlow utility and posterior samples
+        if is_tensorflow_utility and posterior_samples:
+            import tensorflow as tf
+            
+            # Convert posterior samples to TensorFlow format
+            tf_samples = {}
+            for param_name, samples in posterior_samples.items():
+                if isinstance(samples, np.ndarray):
+                    tf_samples[param_name] = tf.convert_to_tensor(samples, dtype=tf.float32)
+                else:
+                    tf_samples[param_name] = samples
+                    
+            # Use TensorFlow optimization if requested and action space supports it
+            if use_gradient and hasattr(self.action_space, 'is_discrete') and not self.action_space.is_discrete:
+                # Check if action_space has the optimize_action_tf method
+                if hasattr(self.action_space, 'optimize_action_tf'):
+                    best_action = self.action_space.optimize_action_tf(
+                        self.utility_function.evaluate_tf, tf_samples, num_steps=100
+                    )
+                    # Calculate utility for the best action
+                    if hasattr(self.utility_function, 'evaluate_tf'):
+                        action_tensor = tf.constant([best_action[dim.name] for dim in self.action_space.dimensions])
+                        utility = tf.reduce_mean(self.utility_function.evaluate_tf(action_tensor, tf_samples)).numpy()
+                        return best_action, utility
+            
+            # Use action space's TensorFlow evaluation method if available
+            if hasattr(self.action_space, 'evaluate_actions_tf'):
+                return self.action_space.evaluate_actions_tf(
+                    self.utility_function.evaluate_tf, tf_samples, num_actions=num_samples
+                )
+        
+        # Use action space's evaluate_actions method if available
+        if hasattr(self.action_space, 'evaluate_actions'):
+            return self.action_space.evaluate_actions(
+                self.utility_function.evaluate, posterior_samples, num_actions=num_samples
+            )
+            
+        # Fall back to the original implementation if specialized methods aren't available
         best_action = None
         best_utility = float('-inf')
-        
-        # Get posterior samples
-        if hasattr(self, 'perception') and hasattr(self.perception, 'posterior_samples'):
-            posterior_samples = self.perception.posterior_samples
-        else:
-            posterior_samples = {}
         
         # Try a reasonable number of samples to find a good action
         num_samples = min(num_samples, self.action_space.get_size() if hasattr(self.action_space, 'get_size') else num_samples)

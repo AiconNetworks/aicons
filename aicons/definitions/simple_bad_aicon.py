@@ -421,15 +421,6 @@ class SimpleBadAIcon:
         
         return self.brain.perception.posterior_samples
     
-    def sample_allocation(self):
-        """
-        Sample a random allocation from the action space.
-        
-        Returns:
-            A randomly sampled allocation, or None if no action space is configured
-        """
-        return self.brain.sample_action()
-    
     def get_action_space(self):
         """
         Get the action space from the brain.
@@ -447,18 +438,6 @@ class SimpleBadAIcon:
             The brain's utility function
         """
         return self.brain.get_utility_function()
-    
-    def find_best_allocation(self, num_samples: int = 100):
-        """
-        Find the best allocation based on the utility function.
-        
-        Args:
-            num_samples: Number of samples to evaluate
-            
-        Returns:
-            Tuple of (best_allocation, utility)
-        """
-        return self.brain.find_best_action(num_samples=num_samples)
     
     def perceive_and_decide(self, environment):
         """
@@ -1046,48 +1025,8 @@ class SimpleBadAIcon:
         if utility_function is None:
             raise ValueError("Cannot find best action without a utility function. Call create_utility_function() first.")
             
-        # Get posterior samples
-        posterior_samples = self.get_posterior_samples()
-        
-        if not posterior_samples:
-            raise ValueError("No posterior samples available. Run perception first.")
-            
-        # Check if this is a TensorFlow utility
-        is_tensorflow_utility = isinstance(utility_function, TensorFlowUtilityFunction)
-        
-        # Convert posterior samples to TensorFlow format if needed
-        if is_tensorflow_utility:
-            # Convert to TensorFlow tensors
-            tf_samples = {}
-            for param_name, samples in posterior_samples.items():
-                if isinstance(samples, np.ndarray):
-                    tf_samples[param_name] = tf.convert_to_tensor(samples, dtype=tf.float32)
-                else:
-                    tf_samples[param_name] = samples
-                    
-            # Use TensorFlow optimization
-            if use_gradient and not action_space.is_discrete:
-                # Use gradient-based optimization
-                print("Using gradient-based optimization...")
-                best_action = action_space.optimize_action_tf(
-                    utility_function.evaluate_tf, tf_samples, num_steps=100
-                )
-                # Calculate utility for the best action
-                action_tensor = tf.constant([best_action[dim.name] for dim in action_space.dimensions])
-                utility = tf.reduce_mean(utility_function.evaluate_tf(action_tensor, tf_samples)).numpy()
-                return best_action, utility
-            else:
-                # Use enumeration or sampling
-                print("Using action enumeration with TensorFlow evaluation...")
-                return action_space.evaluate_actions_tf(
-                    utility_function.evaluate_tf, tf_samples, num_actions=num_samples
-                )
-        else:
-            # Use standard numpy evaluation
-            print("Using action enumeration with NumPy evaluation...")
-            return action_space.evaluate_actions(
-                utility_function.evaluate, posterior_samples, num_actions=num_samples
-            )
+        # Delegate to the brain's implementation
+        return self.brain.find_best_action(num_samples=num_samples, use_gradient=use_gradient)
     
     def sample_action(self):
         """
@@ -1100,7 +1039,7 @@ class SimpleBadAIcon:
         if action_space is None:
             raise ValueError("Cannot sample action without an action space. Call create_action_space() first.")
             
-        return action_space.sample()
+        return self.brain.sample_action()
     
     def create_hierarchical_model_tf(self, num_ads=2, num_days=3):
         """
@@ -1174,3 +1113,83 @@ class SimpleBadAIcon:
             print("No action space has been created yet. Call create_action_space() first.")
             
         return dimensions_info 
+        
+    def get_action_space_details(self):
+        """
+        Get detailed information about the action space configuration.
+        
+        Returns:
+            A dictionary containing detailed information about the action space, including:
+            - type: The type of action space
+            - dimensions: List of dimension names
+            - constraints: List of constraint descriptions
+            - total_budget: The total budget if it's a budget allocation space
+            - min_budget: The minimum budget allowed per dimension
+            - step_size: The budget step size
+            - is_discrete: Whether the action space is discrete
+        """
+        action_space = self.get_action_space()
+        if action_space is None:
+            print("No action space has been created yet. Call create_action_space() first.")
+            return None
+            
+        # Basic info all action spaces have
+        details = {
+            "dimensions": [dim.name for dim in action_space.dimensions],
+            "num_dimensions": len(action_space.dimensions),
+            "constraints": [str(c) for c in action_space.constraints] if hasattr(action_space, 'constraints') else [],
+            "is_discrete": action_space.is_discrete if hasattr(action_space, 'is_discrete') else False
+        }
+        
+        # Get budget-specific attributes that might exist
+        budget_attrs = ['total_budget', 'min_budget', 'budget_step', 'item_ids', 'ad_names']
+        for attr in budget_attrs:
+            if hasattr(action_space, attr):
+                details[attr] = getattr(action_space, attr)
+        
+        # Try to infer action space type
+        if all(dim.name.endswith('_budget') for dim in action_space.dimensions):
+            if hasattr(action_space, 'item_ids'):
+                details["type"] = "budget_allocation"
+            else:
+                details["type"] = "marketing"
+        else:
+            details["type"] = "custom"
+            
+        return details
+        
+    def call_action_space_method(self, method_name, **kwargs):
+        """
+        Call a method directly on the action space object.
+        
+        This allows direct access to action space methods without needing to access
+        the action space object directly.
+        
+        Args:
+            method_name: Name of the method to call on the action space
+            **kwargs: Arguments to pass to the method
+            
+        Returns:
+            The result of calling the method, or None if the action space doesn't exist
+            or doesn't have the requested method
+        """
+        action_space = self.get_action_space()
+        if action_space is None:
+            print("No action space has been created yet. Call create_action_space() first.")
+            return None
+            
+        if not hasattr(action_space, method_name):
+            print(f"Action space does not have method '{method_name}'")
+            print(f"Available methods: {[m for m in dir(action_space) if not m.startswith('_')]}")
+            return None
+            
+        method = getattr(action_space, method_name)
+        if not callable(method):
+            print(f"'{method_name}' is an attribute, not a method")
+            return method
+            
+        try:
+            return method(**kwargs)
+        except Exception as e:
+            print(f"Error calling {method_name}: {str(e)}")
+            return None 
