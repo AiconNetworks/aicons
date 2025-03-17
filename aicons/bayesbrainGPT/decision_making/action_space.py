@@ -158,25 +158,82 @@ class ActionSpace:
         else:
             self.size = float('inf')
     
-    def sample(self) -> Dict[str, Any]:
+    def sample(self):
         """
-        Sample a random point in the action space.
+        Sample a random action from the action space.
+        This ensures all constraints are satisfied.
         
         Returns:
-            Dict mapping dimension names to their sampled values
+            Dictionary mapping dimension names to values
         """
-        # Try to find a valid sample that meets all constraints
-        max_attempts = 100  # Prevent infinite loops
+        # If discrete dimensions, sample uniformly
+        if self.is_discrete:
+            return {dim.name: dim.sample() for dim in self.dimensions}
+        
+        # Check if this is a budget allocation space
+        is_budget_space = (
+            hasattr(self, "total_budget") and 
+            any("budget" in dim.name for dim in self.dimensions)
+        )
+        
+        if is_budget_space:
+            # For budget allocation, use a special sampling method
+            budget_dims = [dim for dim in self.dimensions if "budget" in dim.name]
+            total_budget = self.total_budget
+            
+            # Get min budget for each dimension (or 0)
+            min_budgets = {dim.name: getattr(dim, "min_value", 0.0) for dim in budget_dims}
+            
+            # Calculate remaining budget after minimum allocations
+            allocated_min = sum(min_budgets.values())
+            remaining_budget = max(0, total_budget - allocated_min)
+            
+            # Generate random weights for remaining budget
+            weights = np.random.random(len(budget_dims))
+            weights_sum = np.sum(weights)
+            
+            if weights_sum > 0:
+                # Normalize weights to sum to 1
+                normalized_weights = weights / weights_sum
+                
+                # Allocate remaining budget proportionally
+                action = {}
+                for i, dim in enumerate(budget_dims):
+                    # Allocate min budget plus weighted portion of remaining
+                    action[dim.name] = min_budgets[dim.name] + normalized_weights[i] * remaining_budget
+                    
+                    # Round to step size if present
+                    if hasattr(dim, "step") and dim.step is not None:
+                        steps = round(action[dim.name] / dim.step)
+                        action[dim.name] = steps * dim.step
+                
+                # Handle non-budget dimensions
+                for dim in self.dimensions:
+                    if dim.name not in action:
+                        action[dim.name] = dim.sample()
+                
+                # Ensure budget sums to exact total (adjust largest allocation)
+                budget_sum = sum(action[dim.name] for dim in budget_dims)
+                if abs(budget_sum - total_budget) > 0.01:
+                    # Find dimension with largest allocation
+                    largest_dim = max(budget_dims, key=lambda d: action[d.name])
+                    # Adjust to make sum exact
+                    action[largest_dim.name] += (total_budget - budget_sum)
+                
+                return action
+        
+        # For other continuous spaces with constraints, use rejection sampling
+        max_attempts = 100
         
         for _ in range(max_attempts):
             # Sample each dimension
             action = {dim.name: dim.sample() for dim in self.dimensions}
             
-            # Check constraints
-            if self._check_constraints(action):
+            # Check if all constraints are satisfied
+            if self._check_constraints(action, tolerance=0.01):
                 return action
         
-        # If we couldn't find a valid sample, return None or raise exception
+        # If we couldn't find a valid sample, raise exception
         raise ValueError(f"Could not find a valid action after {max_attempts} attempts")
     
     def contains(self, action: Dict[str, Any]) -> bool:
@@ -194,16 +251,39 @@ class ActionSpace:
             return False
         
         # Check that each dimension contains its value
-        for name, value in action.items():
-            if name not in self.dimension_map or not self.dimension_map[name].contains(value):
+        for dim_name, value in action.items():
+            if dim_name not in self.dimension_map:
+                return False
+            
+            dimension = self.dimension_map[dim_name]
+            if not dimension.contains(value):
                 return False
         
-        # Check additional constraints
-        return self._check_constraints(action)
+        # Check constraints with a small tolerance for budget constraints
+        return self._check_constraints(action, tolerance=0.01)
     
-    def _check_constraints(self, action: Dict[str, Any]) -> bool:
-        """Check if an action satisfies all constraints."""
-        return all(constraint(action) for constraint in self.constraints)
+    def _check_constraints(self, action, tolerance=0.0):
+        """
+        Check if an action satisfies all constraints.
+        
+        Args:
+            action: Dict mapping dimension names to values
+            tolerance: Optional tolerance for budget constraints
+            
+        Returns:
+            bool: True if all constraints are satisfied
+        """
+        for constraint in self.constraints:
+            # For budget allocation, use a small tolerance to increase chances of finding valid samples
+            if "budget" in constraint.__name__.lower() or "sum" in constraint.__name__.lower():
+                # Use specified tolerance for budget constraints
+                if not constraint(action, tolerance=tolerance):
+                    return False
+            else:
+                # Regular constraint check without tolerance
+                if not constraint(action):
+                    return False
+        return True
     
     def enumerate_actions(self, max_actions: int = 1000) -> List[Dict[str, Any]]:
         """
@@ -465,30 +545,35 @@ class ActionSpace:
 
 # Utility functions for creating common action spaces
 
-def create_budget_allocation_space(
-    total_budget: float,
-    num_ads: int,
-    budget_step: float = 100.0,
-    min_budget: float = 0.0
-) -> ActionSpace:
+def create_budget_allocation_space(total_budget: float, num_ads: int, 
+                               budget_step: float = 10.0, min_budget: float = 0.0,
+                               ad_names: Optional[List[str]] = None) -> ActionSpace:
     """
     Create an action space for allocating budget across multiple ads.
     
     Args:
         total_budget: Total budget to allocate
-        num_ads: Number of ads
+        num_ads: Number of ads to allocate budget to
         budget_step: Step size for budget allocation
-        min_budget: Minimum budget per ad
-        
+        min_budget: Minimum budget per ad (default is 0.0)
+        ad_names: Optional list of ad names to use for dimension names
+            
     Returns:
-        ActionSpace for budget allocation
+        An ActionSpace instance with dimensions for each ad's budget
     """
     # Create dimensions for each ad's budget
     dimensions = []
+    
     for i in range(num_ads):
+        # Use provided ad names if available, otherwise use default names
+        if ad_names and i < len(ad_names):
+            name = f"{ad_names[i]}_budget"
+        else:
+            name = f"ad_{i+1}_budget"
+            
         dimensions.append(
             ActionDimension(
-                name=f"ad_{i+1}_budget",
+                name=name,
                 dim_type="continuous",
                 min_value=min_budget,
                 max_value=total_budget,
@@ -497,16 +582,19 @@ def create_budget_allocation_space(
         )
     
     # Add constraint that budgets must sum to total_budget
-    def budget_sum_constraint(action):
-        return np.isclose(sum(action.values()), total_budget)
+    def budget_sum_constraint(action, tolerance=0.0):
+        return np.isclose(sum(action.values()), total_budget, rtol=tolerance)
     
-    return ActionSpace(dimensions, constraints=[budget_sum_constraint])
+    action_space = ActionSpace(dimensions, constraints=[budget_sum_constraint])
+    # Store total_budget as an attribute for reference
+    action_space.total_budget = total_budget
+    return action_space
 
 
 def create_time_budget_allocation_space(
     total_budget: float,
     num_ads: int,
-    num_days: int,
+    num_days: int = 3,
     budget_step: float = 100.0,
     min_budget: float = 0.0
 ) -> ActionSpace:
@@ -516,20 +604,20 @@ def create_time_budget_allocation_space(
     Args:
         total_budget: Total budget to allocate
         num_ads: Number of ads
-        num_days: Number of days
+        num_days: Number of days to allocate budget for
         budget_step: Step size for budget allocation
         min_budget: Minimum budget per ad per day
-        
+            
     Returns:
         ActionSpace for time-based budget allocation
     """
     # Create dimensions for each ad's budget on each day
     dimensions = []
-    for d in range(num_days):
-        for i in range(num_ads):
+    for i in range(num_ads):
+        for j in range(num_days):
             dimensions.append(
                 ActionDimension(
-                    name=f"day_{d+1}_ad_{i+1}_budget",
+                    name=f"ad_{i+1}_day_{j+1}_budget",
                     dim_type="continuous",
                     min_value=min_budget,
                     max_value=total_budget,
@@ -538,10 +626,13 @@ def create_time_budget_allocation_space(
             )
     
     # Add constraint that budgets must sum to total_budget
-    def budget_sum_constraint(action):
-        return np.isclose(sum(action.values()), total_budget)
+    def budget_sum_constraint(action, tolerance=0.0):
+        return np.isclose(sum(action.values()), total_budget, rtol=tolerance)
     
-    return ActionSpace(dimensions, constraints=[budget_sum_constraint])
+    action_space = ActionSpace(dimensions, constraints=[budget_sum_constraint])
+    # Store total_budget as an attribute for reference
+    action_space.total_budget = total_budget
+    return action_space
 
 
 def create_multi_campaign_action_space(
@@ -549,98 +640,100 @@ def create_multi_campaign_action_space(
     budget_step: float = 100.0
 ) -> ActionSpace:
     """
-    Create a customizable action space for multiple campaigns with different parameters.
+    Create an action space for allocating budget across multiple campaigns and days.
     
     Args:
-        campaigns: Dictionary mapping campaign IDs to their parameters
-            Each campaign dict should have:
-                - total_budget: Total budget for this campaign
-                - min_budget: Minimum budget per day (optional)
-                - max_budget: Maximum budget per day (optional)
-                - days: List of day names or identifiers (optional)
+        campaigns: Dictionary mapping campaign_id to campaign data
+            Each campaign should have:
+            - 'total_budget': Total budget for this campaign
+            - 'days': List of day identifiers
+            - 'ads': List of ad identifiers
         budget_step: Step size for budget allocation
-        
-    Returns:
-        ActionSpace for the multi-campaign scenario
-    """
-    dimensions = []
-    
-    for campaign_id, params in campaigns.items():
-        total_budget = params.get('total_budget', 0)
-        min_budget = params.get('min_budget', 0)
-        max_budget = params.get('max_budget', total_budget)
-        days = params.get('days', [1])  # Default to a single day
-        
-        # Add dimensions for each day in this campaign
-        if isinstance(days, int):
-            # If days is an integer, create that many numbered days
-            days = list(range(1, days + 1))
             
-        for day in days:
-            dimensions.append(
-                ActionDimension(
-                    name=f"{campaign_id}_day_{day}_budget",
-                    dim_type="continuous",
-                    min_value=min_budget,
-                    max_value=max_budget,
-                    step=budget_step
-                )
-            )
-    
-    # Add constraint that budgets for each campaign must sum to its total_budget
+    Returns:
+        ActionSpace for multi-campaign budget allocation
+    """
+    # Create dimensions for each campaign's ads on each day
+    dimensions = []
     constraints = []
-    for campaign_id, params in campaigns.items():
-        total_budget = params.get('total_budget', 0)
-        days = params.get('days', [1])
+    
+    total_budget = 0.0
+    
+    for campaign_id, campaign_data in campaigns.items():
+        campaign_budget = campaign_data.get('total_budget', 0.0)
+        days = campaign_data.get('days', [1])
+        ads = campaign_data.get('ads', [1])
         
-        if isinstance(days, int):
-            days = list(range(1, days + 1))
+        # Track total budget across all campaigns
+        total_budget += campaign_budget
+        
+        # Create dimensions for each ad on each day
+        for ad_id in ads:
+            for day in days:
+                dimensions.append(
+                    ActionDimension(
+                        name=f"{campaign_id}_ad_{ad_id}_day_{day}_budget",
+                        dim_type="continuous",
+                        min_value=0.0,
+                        max_value=campaign_budget,
+                        step=budget_step
+                    )
+                )
         
         # Closure to capture campaign_id and days
         def make_campaign_constraint(cid, day_list, budget):
-            def campaign_constraint(action):
+            def campaign_constraint(action, tolerance=0.0):
                 campaign_keys = [f"{cid}_day_{day}_budget" for day in day_list]
                 campaign_budget = sum(action[k] for k in campaign_keys if k in action)
-                return np.isclose(campaign_budget, budget)
+                return np.isclose(campaign_budget, budget, rtol=tolerance)
             return campaign_constraint
         
-        constraints.append(make_campaign_constraint(campaign_id, days, total_budget))
+        # Add constraint that each campaign's budget is respected
+        constraints.append(make_campaign_constraint(campaign_id, days, campaign_budget))
     
-    return ActionSpace(dimensions, constraints=constraints)
+    # Budget sum constraint
+    def budget_sum_constraint(action, tolerance=0.0):
+        return np.isclose(sum(action.values()), total_budget, rtol=tolerance)
+    
+    action_space = ActionSpace(dimensions, constraints=[budget_sum_constraint] + constraints)
+    # Store total_budget as an attribute
+    action_space.total_budget = total_budget
+    return action_space
 
 
 def create_marketing_ads_space(
-    total_budget: float,
+    total_budget: float, 
     num_ads: int, 
-    budget_step: float = 10.0,
+    budget_step: float = 100.0, 
     min_budget: float = 0.0,
-    ad_names: List[str] = None
+    ad_names: Optional[List[str]] = None
 ) -> ActionSpace:
     """
-    Create an action space specifically for marketing ad budget allocation.
-    Tailored for the TensorFlow model example in the module docstring.
+    Create an action space for allocating budget across marketing ads.
     
     Args:
         total_budget: Total budget to allocate
-        num_ads: Number of ads
+        num_ads: Number of ads to allocate budget to
         budget_step: Step size for budget allocation
         min_budget: Minimum budget per ad
-        ad_names: Optional list of ad names
-        
+        ad_names: Optional list of ad names to use for dimension names
+            
     Returns:
-        ActionSpace for marketing ads budget allocation
+        ActionSpace for marketing budget allocation
     """
+    # Create dimensions for each ad's budget
     dimensions = []
     
-    # Use provided ad names or generate default ones
-    if ad_names is None:
-        ad_names = [f"ad_{i+1}" for i in range(num_ads)]
-    
-    # Create a dimension for each ad
     for i in range(num_ads):
+        # Use provided ad names if available, otherwise use default names
+        if ad_names and i < len(ad_names):
+            name = f"{ad_names[i]}_budget"
+        else:
+            name = f"ad_{i+1}_budget"
+            
         dimensions.append(
             ActionDimension(
-                name=f"{ad_names[i]}_budget",
+                name=name,
                 dim_type="continuous",
                 min_value=min_budget,
                 max_value=total_budget,
@@ -648,11 +741,14 @@ def create_marketing_ads_space(
             )
         )
     
-    # Budget sum constraint
-    def budget_sum_constraint(action):
-        return np.isclose(sum(action.values()), total_budget)
+    # Add constraint that budgets must sum to total_budget
+    def budget_sum_constraint(action, tolerance=0.0):
+        return np.isclose(sum(action.values()), total_budget, rtol=tolerance)
     
-    return ActionSpace(dimensions, constraints=[budget_sum_constraint])
+    action_space = ActionSpace(dimensions, constraints=[budget_sum_constraint])
+    # Store total_budget as an attribute for reference
+    action_space.total_budget = total_budget
+    return action_space
 
 
 # Example usage

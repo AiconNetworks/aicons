@@ -774,6 +774,38 @@ class SimpleBadAIcon:
             print("No perception run is currently active.")
             return False
 
+    def validate_budget_allocation(self, total_budget, num_ads, budget_step):
+        """
+        Validates that budget allocation parameters are compatible.
+        
+        Args:
+            total_budget: Total budget to allocate
+            num_ads: Number of ads
+            budget_step: Step size for budget allocation
+            
+        Returns:
+            Tuple of (is_valid, message, suggested_fixes)
+        """
+        is_valid = True
+        message = ""
+        suggestions = []
+        
+        # Check if budget is divisible by step size
+        if total_budget % budget_step != 0:
+            is_valid = False
+            message = f"Total budget ${total_budget} is not divisible by step size ${budget_step}"
+            
+            # Suggest alternative step sizes that would work
+            for divisor in [5, 10, 20, 25, 50, 100]:
+                if total_budget % divisor == 0:
+                    suggestions.append(f"- Change step size to ${divisor}")
+            
+            # Or suggest rounding the total budget
+            rounded_budget = round(total_budget / budget_step) * budget_step
+            suggestions.append(f"- Change total budget to ${rounded_budget}")
+        
+        return is_valid, message, suggestions
+    
     def create_action_space(self, space_type: str = 'marketing', **kwargs):
         """
         Create an action space for the AIcon.
@@ -802,6 +834,15 @@ class SimpleBadAIcon:
             min_budget = kwargs.get('min_budget', 0.0)
             ad_names = kwargs.get('ad_names', None)
             
+            # Validate parameters
+            is_valid, message, suggestions = self.validate_budget_allocation(total_budget, num_ads, budget_step)
+            if not is_valid and not kwargs.get('ignore_validation', False):
+                print(f"⚠️ Warning: {message}")
+                print("Suggested fixes:")
+                for suggestion in suggestions:
+                    print(suggestion)
+                print("To ignore this warning, add ignore_validation=True to your function call.")
+            
             action_space = create_marketing_ads_space(
                 total_budget=total_budget,
                 num_ads=num_ads,
@@ -827,6 +868,24 @@ class SimpleBadAIcon:
             # Use number of items if provided, otherwise use explicit num_ads
             num_ads = kwargs.get('num_ads', len(items))
             
+            # Validate parameters
+            is_valid, message, suggestions = self.validate_budget_allocation(total_budget, num_ads, budget_step)
+            if not is_valid and not kwargs.get('ignore_validation', False):
+                print(f"⚠️ Warning: {message}")
+                print("Suggested fixes:")
+                for suggestion in suggestions:
+                    print(suggestion)
+                print("To ignore this warning, add ignore_validation=True to your function call.")
+                print("Adjusting step size to ensure valid allocations...")
+                
+                # Auto-adjust step size to ensure it divides the total budget
+                for divisor in [5, 10, 20, 25, 50, 100]:
+                    if total_budget % divisor == 0:
+                        budget_step = divisor
+                        step_size = divisor / total_budget
+                        print(f"Adjusted step size to ${budget_step} (or {step_size*100:.1f}% of total)")
+                        break
+            
             # Create the budget allocation space
             action_space = create_budget_allocation_space(
                 total_budget=total_budget,
@@ -850,6 +909,15 @@ class SimpleBadAIcon:
             budget_step = kwargs.get('budget_step', 100.0)
             min_budget = kwargs.get('min_budget', 0.0)
             
+            # Validate parameters
+            is_valid, message, suggestions = self.validate_budget_allocation(total_budget, num_ads, budget_step)
+            if not is_valid and not kwargs.get('ignore_validation', False):
+                print(f"⚠️ Warning: {message}")
+                print("Suggested fixes:")
+                for suggestion in suggestions:
+                    print(suggestion)
+                print("To ignore this warning, add ignore_validation=True to your function call.")
+            
             action_space = create_budget_allocation_space(
                 total_budget=total_budget,
                 num_ads=num_ads,
@@ -864,6 +932,15 @@ class SimpleBadAIcon:
             num_days = kwargs.get('num_days', 3)
             budget_step = kwargs.get('budget_step', 100.0)
             min_budget = kwargs.get('min_budget', 0.0)
+            
+            # Validate parameters
+            is_valid, message, suggestions = self.validate_budget_allocation(total_budget, num_ads * num_days, budget_step)
+            if not is_valid and not kwargs.get('ignore_validation', False):
+                print(f"⚠️ Warning: {message}")
+                print("Suggested fixes:")
+                for suggestion in suggestions:
+                    print(suggestion)
+                print("To ignore this warning, add ignore_validation=True to your function call.")
             
             action_space = create_time_budget_allocation_space(
                 total_budget=total_budget,
