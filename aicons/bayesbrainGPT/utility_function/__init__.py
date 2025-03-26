@@ -26,16 +26,6 @@ from aicons.bayesbrainGPT.utility_function.multi_objective_utility import (
     AdaptiveWeightUtility
 )
 
-# Custom utility functions
-from aicons.bayesbrainGPT.utility_function.custom_utility import (
-    LambdaUtility,
-    CustomCompositeUtility,
-    TensorFlowLambdaUtility,
-    RuleBasedUtility,
-    ParameterizedUtility,
-    ContextAwareUtility
-)
-
 # Convenience mapping of utility types to their classes
 UTILITY_FACTORIES = {
     # Marketing utilities
@@ -47,15 +37,7 @@ UTILITY_FACTORIES = {
     "weighted_sum": WeightedSumUtility,
     "pareto": ParetoUtility,
     "constrained_multi_objective": ConstrainedMultiObjectiveUtility,
-    "adaptive_weight": AdaptiveWeightUtility,
-    
-    # Custom utilities
-    "lambda": LambdaUtility,
-    "composite": CustomCompositeUtility,
-    "tensorflow_lambda": TensorFlowLambdaUtility,
-    "rule_based": RuleBasedUtility,
-    "parameterized": ParameterizedUtility,
-    "context_aware": ContextAwareUtility
+    "adaptive_weight": AdaptiveWeightUtility
 }
 
 
@@ -102,14 +84,6 @@ __all__ = [
     "ParetoUtility",
     "ConstrainedMultiObjectiveUtility",
     "AdaptiveWeightUtility",
-    
-    # Custom utilities
-    "LambdaUtility",
-    "CustomCompositeUtility",
-    "TensorFlowLambdaUtility",
-    "RuleBasedUtility",
-    "ParameterizedUtility",
-    "ContextAwareUtility",
     
     # Factory function
     "create_utility",

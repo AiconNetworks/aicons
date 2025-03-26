@@ -1,5 +1,26 @@
-Not so naive, gpt-enhanced bayes.
+Not so naive, gpt-enhanced bayes. Unifying Large Language Models and Bayesian Brain hypothesis.
 Generative bayesian inference process using LLMs as experience in prior construction for statistically self-controlled decision making.
+
+This is an attempt to create a Bayesian brain. We base our theory on the usage of system 1 and system 2 proposed by Daniel Khaneman and Amos Tverski assuming a similar approach taken by the brain through the aPFC and prefrontal cortex talked about in the book “a brief history of intelligence”. In order for LLMs to have the system two approach we take an approach similar to what we see in bayesian brain hypothesis. Where the brain interpret the world in a way that resembles bayesian inference. In essence it proposes that brain combines prior beliefs (or expectations) with incoming sensory data to form a probabliistc estimate of the world.
+
+The brain is not a yes/no basis. It rpresresnts information in terms of probabilities which allows for flexible interpretation when information is noisy or ambiguous.
+
+At the heart of the hypothesis is Bayes theorm. When new sensory informaint is received, the brain update its internal model by weightin the new data (likelihood) against prior beliefs to form a revised belief (posterior).
+
+Posterior = Likelihood x prior
+
+Thr brain constantly makes prediction about incoming sensory signals. When the actual sensory input deviates form these predi ont a predicoint error is genertatd. This error is then used to update and refine the brains internal models, a process thought to be central to learning and adapataiton.
+
+Perception
+The bayesian approach helps explain how we interpret ambiguous sensory data. In visual peceiption our brains can resolve unclear images by integrating content and prior experiences. THis is why optical illusions or ambiguous figures can sometimes be seen in multiple ways.
+
+Decision Making
+In uncertain situations the brain weighs potential outcomes based on previous experiences and current sensory inputs. The probabilistic decision making process is a cornerstone of the Bayesian brain model.
+
+Motor Control
+When planning movements, the brian predicts the necessary motor commands by accounting for uncertainties in both sensory feedback and muscle responses. This predictive control helps ensure smooth and coordinated actions.
+
+Regardless motor control not being paramount for our model creation aicons, we still need to acocunt that our instruments for empirical learning come from our limbs mostly. So this is something to have in mind when creating a complete bayesian agent.
 
 Literature review
 BAYESIAN INFERENCE
