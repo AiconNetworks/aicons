@@ -41,18 +41,3 @@ API Client Limb
   └── Twitter Post Tool
   └── Weather API Tool
 ```
-
-## Implementation
-
-Tools are implemented in the `tools/` directory and typically use one or more limbs to accomplish their tasks. Each tool should:
-
-1. Define its purpose and requirements
-2. Specify which limbs it depends on
-3. Implement the specific logic needed to interact with the external service
-
-Limbs are implemented in the `limbs/` directory and provide the foundational capabilities that tools can use. Each limb should:
-
-1. Define a clear interface
-2. Handle common operations for its domain
-3. Provide error handling and logging
-4. Be reusable across multiple tools

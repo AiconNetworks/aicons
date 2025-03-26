@@ -15,6 +15,7 @@ matplotlib = "^3.10.1"
 pandas = "^2.2.3"
 facebook-business = "^22.0.2"
 flask = "^3.1.0"
+psycopg2-binary = "^2.9.10"
 
 
 [build-system]

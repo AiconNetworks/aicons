@@ -9,6 +9,8 @@ import numpy as np
 import tensorflow as tf
 import tensorflow_probability as tfp
 import time
+import uuid
+import os
 from datetime import datetime
 
 # TFP shortcuts
@@ -42,6 +44,9 @@ class SimpleBadAIcon:
             name: Name of the AIcon
             capabilities: List of capabilities (optional)
         """
+        # Generate a unique identifier for this AIcon
+        self.id = str(uuid.uuid4())
+        
         self.name = name
         self.capabilities = capabilities or []
         self.type = "bad"
@@ -60,6 +65,9 @@ class SimpleBadAIcon:
             "last_update_time": None,
             "updates": []
         }
+        
+        # Persistence manager (initialized when needed)
+        self._persistence = None
     
     
     def add_factor_continuous(self, name: str, value: float, uncertainty: float = 0.1, 
@@ -1192,4 +1200,191 @@ class SimpleBadAIcon:
             return method(**kwargs)
         except Exception as e:
             print(f"Error calling {method_name}: {str(e)}")
+            return None
+
+    # Persistence methods
+    def connect_to_db(self, db_connection_string: str = None):
+        """
+        Connect to the database for persistence.
+        
+        Args:
+            db_connection_string: Optional database connection string
+            
+        Returns:
+            True if connection is successful, False otherwise
+        """
+        try:
+            from aicons.bayesbrainGPT.persistence.persistence import AIconPersistence
+            self._persistence = AIconPersistence(db_connection_string)
+            
+            # Initialize the schema if needed
+            self._persistence.initialize_schema()
+            
+            return True
+        except Exception as e:
+            import logging
+            logging.error(f"Failed to connect to database: {e}")
+            return False
+    
+    def save_state(self, name: str = None, db_connection_string: str = None, save_pickle: bool = True) -> bool:
+        """
+        Save the current state of the AIcon to the database.
+        
+        Args:
+            name: Optional new name for the AIcon (uses current name if None)
+            db_connection_string: Optional database connection string
+            save_pickle: Whether to save a pickle representation for complex objects
+            
+        Returns:
+            True if save is successful, False otherwise
+        """
+        if name:
+            self.name = name
+            
+        try:
+            # Initialize persistence if not already done
+            if self._persistence is None:
+                self.connect_to_db(db_connection_string)
+                
+            if self._persistence is None:
+                raise ValueError("No database connection available")
+                
+            # Save the AIcon state
+            aicon_id = self._persistence.save_aicon(self, save_pickle=save_pickle)
+            
+            if aicon_id:
+                print(f"AIcon state saved successfully with ID: {aicon_id}")
+                return True
+            else:
+                print("Failed to save AIcon state")
+                return False
+                
+        except Exception as e:
+            import logging
+            logging.error(f"Error saving AIcon state: {e}")
+            print(f"Error saving AIcon state: {e}")
+            return False
+    
+    def load_state(self, aicon_id: str = None, db_connection_string: str = None) -> bool:
+        """
+        Load the state of the AIcon from the database.
+        
+        Args:
+            aicon_id: ID of the AIcon to load (uses current ID if None)
+            db_connection_string: Optional database connection string
+            
+        Returns:
+            True if load is successful, False otherwise
+        """
+        try:
+            # Use current ID if none provided
+            if aicon_id is None:
+                aicon_id = self.id
+                
+            # Initialize persistence if not already done
+            if self._persistence is None:
+                self.connect_to_db(db_connection_string)
+                
+            if self._persistence is None:
+                raise ValueError("No database connection available")
+                
+            # Load the AIcon data
+            aicon_data = self._persistence.load_aicon(aicon_id)
+            
+            if not aicon_data:
+                print(f"No AIcon found with ID: {aicon_id}")
+                return False
+                
+            # Update basic attributes
+            self.name = aicon_data.get('name', self.name)
+            self.type = aicon_data.get('config', {}).get('type', self.type)
+            self.capabilities = aicon_data.get('config', {}).get('capabilities', self.capabilities)
+            
+            # Restore brain from pickle if available
+            if 'brain_pickle' in aicon_data:
+                self.brain = aicon_data['brain_pickle']
+            # Otherwise restore brain state from JSON
+            elif 'state' in aicon_data and 'brain' in aicon_data['state']:
+                brain_data = aicon_data['state']['brain']
+                
+                # Restore state factors
+                if 'state_factors' in brain_data:
+                    self.brain.set_state_factors(brain_data['state_factors'])
+                
+                # Restore posterior samples
+                if 'posterior_samples' in brain_data:
+                    posterior_samples = {}
+                    for k, v in brain_data['posterior_samples'].items():
+                        if isinstance(v, list):
+                            posterior_samples[k] = np.array(v)
+                        else:
+                            posterior_samples[k] = v
+                    self.brain.set_posterior_samples(posterior_samples)
+                
+                # Restore decision parameters
+                if 'decision_params' in brain_data:
+                    self.brain.set_decision_params(brain_data['decision_params'])
+            
+            # Restore campaigns
+            if 'state' in aicon_data and 'campaigns' in aicon_data['state']:
+                self.campaigns = aicon_data['state']['campaigns']
+                
+            # Restore run stats
+            if 'state' in aicon_data and 'run_stats' in aicon_data['state']:
+                self.run_stats = aicon_data['state']['run_stats']
+                
+            # Restore running state
+            if 'state' in aicon_data and 'is_running' in aicon_data['state']:
+                self.is_running = aicon_data['state']['is_running']
+                
+            print(f"AIcon state loaded successfully from ID: {aicon_id}")
+            return True
+                
+        except Exception as e:
+            import logging
+            logging.error(f"Error loading AIcon state: {e}")
+            print(f"Error loading AIcon state: {e}")
+            return False
+    
+    @classmethod
+    def load_from_db(cls, aicon_id: str, db_connection_string: str = None):
+        """
+        Create a new AIcon instance and load its state from the database.
+        
+        Args:
+            aicon_id: ID of the AIcon to load
+            db_connection_string: Optional database connection string
+            
+        Returns:
+            A new SimpleBadAIcon instance with the loaded state, or None if loading failed
+        """
+        try:
+            # Initialize persistence
+            from aicons.bayesbrainGPT.persistence.persistence import AIconPersistence
+            persistence = AIconPersistence(db_connection_string)
+            
+            # Load the AIcon data
+            aicon_data = persistence.load_aicon(aicon_id)
+            
+            if not aicon_data:
+                print(f"No AIcon found with ID: {aicon_id}")
+                return None
+                
+            # Create a new instance
+            name = aicon_data.get('name', f"LoadedAIcon_{aicon_id[:8]}")
+            aicon = cls(name)
+            
+            # Set the ID
+            aicon.id = aicon_id
+            
+            # Load the state
+            aicon._persistence = persistence
+            aicon.load_state(aicon_id)
+            
+            return aicon
+                
+        except Exception as e:
+            import logging
+            logging.error(f"Error loading AIcon: {e}")
+            print(f"Error loading AIcon: {e}")
             return None 
