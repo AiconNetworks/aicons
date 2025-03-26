@@ -173,10 +173,10 @@ class BayesBrain:
     
     def find_best_action(self, num_samples: Optional[int] = None, use_gradient: bool = False) -> Tuple[Optional[Dict[str, Any]], float]:
         """
-        Find the best action using the utility function
+        Find the best action according to the utility function
         
         Args:
-            num_samples: Number of samples to try when searching for the best action
+            num_samples: Number of actions to sample (for Monte Carlo methods)
             use_gradient: Whether to use gradient-based optimization (for TensorFlow utility)
             
         Returns:
@@ -184,7 +184,7 @@ class BayesBrain:
         """
         if self.action_space is None:
             return None, 0.0
-        
+            
         if self.utility_function is None:
             return None, 0.0
             
@@ -203,21 +203,69 @@ class BayesBrain:
         
         # If we have a TensorFlow utility and posterior samples
         if is_tensorflow_utility and posterior_samples:
-            if use_gradient:
-                # For TensorFlow utilities, we can use gradient-based optimization
-                return self.utility_function.find_best_action_gradient(
-                    self.action_space, 
-                    posterior_samples=posterior_samples
+            import tensorflow as tf
+            
+            # Convert posterior samples to TensorFlow format
+            tf_samples = {}
+            for param_name, samples in posterior_samples.items():
+                if isinstance(samples, np.ndarray):
+                    tf_samples[param_name] = tf.convert_to_tensor(samples, dtype=tf.float32)
+                else:
+                    tf_samples[param_name] = samples
+                    
+            # Use TensorFlow optimization if requested and action space supports it
+            if use_gradient and hasattr(self.action_space, 'is_discrete') and not self.action_space.is_discrete:
+                # Check if action_space has the optimize_action_tf method
+                if hasattr(self.action_space, 'optimize_action_tf'):
+                    best_action = self.action_space.optimize_action_tf(
+                        self.utility_function.evaluate_tf, tf_samples, num_steps=100
+                    )
+                    # Calculate utility for the best action
+                    if hasattr(self.utility_function, 'evaluate_tf'):
+                        action_tensor = tf.constant([best_action[dim.name] for dim in self.action_space.dimensions])
+                        utility = tf.reduce_mean(self.utility_function.evaluate_tf(action_tensor, tf_samples)).numpy()
+                        return best_action, utility
+            
+            # Use action space's TensorFlow evaluation method if available
+            if hasattr(self.action_space, 'evaluate_actions_tf'):
+                return self.action_space.evaluate_actions_tf(
+                    self.utility_function.evaluate_tf, tf_samples, num_actions=num_samples
                 )
-            else:
-                # For TensorFlow utilities, we can use more efficient vectorized evaluation
-                sampled_actions = [self.action_space.sample() for _ in range(num_samples)]
-                utility_values = self.utility_function.evaluate_tf_batch(
-                    sampled_actions, 
-                    posterior_samples=posterior_samples
-                )
-                best_index = utility_values.argmax()
-                return sampled_actions[best_index], float(utility_values[best_index])
+                
+            # Otherwise use vectorized batch evaluation
+            sampled_actions = [self.action_space.sample() for _ in range(num_samples)]
+            try:
+                # Check if evaluate_tf_batch exists before calling it
+                if hasattr(self.utility_function, 'evaluate_tf_batch'):
+                    # Try using the TensorFlow batch evaluation
+                    utility_values = self.utility_function.evaluate_tf_batch(
+                        sampled_actions, 
+                        posterior_samples=tf_samples
+                    )
+                    best_index = tf.argmax(utility_values).numpy()
+                    return sampled_actions[best_index], float(utility_values[best_index])
+                else:
+                    # Fall back to evaluate_tf with individual evaluation
+                    utilities = []
+                    for action in sampled_actions:
+                        # Convert action to tensor
+                        action_tensor = tf.constant([action[dim.name] for dim in self.action_space.dimensions])
+                        # Calculate utility
+                        utility = tf.reduce_mean(self.utility_function.evaluate_tf(action_tensor, tf_samples))
+                        utilities.append(utility)
+                    # Find best action
+                    best_index = tf.argmax(tf.stack(utilities)).numpy()
+                    return sampled_actions[best_index], float(utilities[best_index])
+            except Exception as e:
+                # Fallback to individual evaluation
+                import logging
+                logging.warning(f"Error in TF evaluation, falling back to standard: {e}")
+        
+        # Use action space's evaluate_actions method if available
+        if hasattr(self.action_space, 'evaluate_actions'):
+            return self.action_space.evaluate_actions(
+                self.utility_function.evaluate, posterior_samples, num_actions=num_samples
+            )
         
         # Default implementation - sample and evaluate
         best_action = None
@@ -227,25 +275,41 @@ class BayesBrain:
             action = self.action_space.sample()
             utility = 0.0
             
-            # If we have a TensorFlow utility
-            if is_tensorflow_utility:
-                utility = self.utility_function.evaluate_tf(action)
-            # If we have posterior samples, use expected utility
-            elif posterior_samples:
-                utilities = []
-                for i in range(len(next(iter(posterior_samples.values())))):
-                    # Extract the i-th sample for each parameter
-                    sample = {k: v[i] for k, v in posterior_samples.items()}
-                    utilities.append(self.utility_function(action, sample))
-                utility = sum(utilities) / len(utilities)
-            # Otherwise, just evaluate the utility directly
-            else:
-                utility = self.utility_function(action)
+            # If we have a method-based utility function
+            if hasattr(self.utility_function, 'evaluate'):
+                # If we have posterior samples, use expected_utility method
+                if posterior_samples:
+                    if hasattr(self.utility_function, 'expected_utility'):
+                        utility = self.utility_function.expected_utility(action, posterior_samples)
+                    else:
+                        # Compute expected utility over posterior samples
+                        all_utilities = []
+                        for i in range(len(next(iter(posterior_samples.values())))):
+                            # Extract the i-th sample for each parameter
+                            sample = {k: v[i] for k, v in posterior_samples.items()}
+                            all_utilities.append(self.utility_function.evaluate(action, sample))
+                        utility = sum(all_utilities) / len(all_utilities)
+                else:
+                    # Use state factors directly if no posterior samples
+                    utility = self.utility_function.evaluate(action, self.state_factors)
+            # If we have a callable utility function 
+            elif callable(self.utility_function):
+                if posterior_samples:
+                    # Compute expected utility over posterior samples
+                    all_utilities = []
+                    for i in range(len(next(iter(posterior_samples.values())))):
+                        # Extract the i-th sample for each parameter
+                        sample = {k: v[i] for k, v in posterior_samples.items()}
+                        all_utilities.append(self.utility_function(action, sample))
+                    utility = sum(all_utilities) / len(all_utilities)
+                else:
+                    # Use state factors directly if no posterior samples
+                    utility = self.utility_function(action, self.state_factors)
             
             if utility > best_utility:
                 best_utility = utility
                 best_action = action
-                
+        
         return best_action, best_utility
     
     def set_decision_params(self, params: Dict[str, Any]):

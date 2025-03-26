@@ -1,5 +1,5 @@
 Not so naive, gpt-enhanced bayes.
-Generative bayesian inference process using LLMs as prior experience memory for statistically self-controlled decision making.
+Generative bayesian inference process using LLMs as experience in prior construction for statistically self-controlled decision making.
 
 Literature review
 BAYESIAN INFERENCE
@@ -90,7 +90,26 @@ We handle covariance and interrelations of factors by using precision precision 
 
 The brain might encode this uncertainty using population codes, where neural activity patterns reflect variance (uncertainty about a single variable) and covariance (how two variables relate). Since we are using llms as proxy of experience data storage similar to what the brain does, we are going to assume this encoding as well for now.
 State representation
-In the bayesian brain hypothesis, the brain is thought to have higher cortical areas which encode abstract, high-level expectations like “its stormy”,; it has lower cortical areas which process sensory details, kiek local rain intensity. And it has feedback looks that carry precitns form higher levels to lower levels and send back errors signals when prec iotns dont match sensory input.
+In the bayesian brain hypothesis, the brain is thought to have higher cortical areas which encode abstract, high-level expectations like “its stormy”,; it has lower cortical areas which process sensory details, like local rain intensity. And it has feedback looks that carry precitns form higher levels to lower levels and send back errors signals when prec iotns dont match sensory input.
+
+In our system, state representation is also the place where the system makes assumptions of data. These are latent variables.
+
+Latent Varibales
+For example we can assume there is a true temperature Ttrue that we want to infer. We dont observe Ttrue directly; instead we get a measurement of Tobs that is noisy.
+Then we get measurement model (likelohood)
+
+Tobs​=Ttrue​+ϵT​,
+where ϵT​∼N(0,σT2​)
+
+Thenw e specify a prior for Tture, for instance if we expect the temperature typically hovers around 25 witha astandar deviation of 5 we could define
+
+Ttrue​∼N(25,52).
+
+This is the prior belief before seeing the current observation. This is also where we can leverage large language models experience for prior modeling.
+
+So even though temperature is coninoulsy observed, we predefine it by assuming a generative process: thre is a latent Ttrue that geenrates teh observed Tobs via noise.
+Specifying a prior for Tture; this ecnodes initial belief about temperature before new data.
+Incorporating measurement uncertainty: Through the noise model ϵT​∼N(0,σT2​).
 
 Factors
 
@@ -179,6 +198,23 @@ For purely continuous
 We can have a gaussian.
 Other continuous prior.
 
+Identify the objective and context
+Objective what is the end foal of the model?
+Context which aspects of weather are most relevant?
+
+So for example, programming campaign ads.
+
+List potential factors
+Catgeroical variables, continuous, discrete
+Decide on the internal structure
+We eed to check how factors might be interrelated.
+Hierarchical Relationships
+Conditional Dependencies
+Contextual Variations
+Assign priors and hyperpriors
+
+For each variable or parameter in the conditional distribution, we need to choose an appropriate prior distribution. The hyperparameters of the priors can reflect export knowledge or historical data.
+
 Retrieval / Memory
 In a biological Bayesian brain, these priors are shaped by experience—i.e., memory of past patterns. Think of it as a long-term representation that you “retrieve” whenever you need to infer or predict current conditions.
 
@@ -218,11 +254,52 @@ Relatinsohp can hep explain away correlated bariabilty. If two variables tend to
 
 Learnign and adaptations, I father erleaitonshop between weather and traffic changes, system can update its model accordingly. This is important because mandy prediction models before covid were awful predicting during coivd and even after covid.
 
+Example: Modeling Weather and Related Factors
+Let the overall state be
+s=(r,T,ω,d),\mathbf{s} = (r, T, \omega, d),s=(r,T,ω,d),
+where:
+rrr (Rain Amount): A continuous variable (in millimeters).
+
+TTT (Temperature): A continuous variable (in °C).
+
+ω\omegaω (Weather Type): A categorical variable with levels, for example, {Clear,Cloudy,Stormy}\{\text{Clear}, \text{Cloudy}, \text{Stormy}\}{Clear,Cloudy,Stormy}.
+
+ddd (Number of Traffic Incidents): A discrete variable (non-negative integer) that might depend on the weather.
+
+Hierarchical Factorization
+Instead of specifying one flat joint distribution P(r,T,ω,d)P(r, T, \omega, d)P(r,T,ω,d), we can factorize it to reflect the dependencies we believe exist:
+P(r,T,ω,d)=P(ω)  P(T∣ω)  P(r∣T,ω)  P(d∣ω).P(r, T, \omega, d) = P(\omega) \; P(T \mid \omega) \; P(r \mid T, \omega) \; P(d \mid \omega).P(r,T,ω,d)=P(ω)P(T∣ω)P(r∣T,ω)P(d∣ω).
+Explanation of Each Term
+P(ω)P(\omega)P(ω) – Weather Type (Categorical):
+This is the top-level prior. For example, we might assume:
+P(ω=Clear)=0.5,P(ω=Cloudy)=0.3,P(ω=Stormy)=0.2.P(\omega = \text{Clear}) = 0.5,\quad P(\omega = \text{Cloudy}) = 0.3,\quad P(\omega = \text{Stormy}) = 0.2.P(ω=Clear)=0.5,P(ω=Cloudy)=0.3,P(ω=Stormy)=0.2.
+P(T∣ω)P(T \mid \omega)P(T∣ω) – Temperature Given Weather (Continuous):
+Temperature depends on the weather type. We might model this with a Gaussian distribution whose parameters (mean and variance) depend on ω\omegaω. For instance:
+T∣ω=Clear∼N(μClear,σClear2),T \mid \omega = \text{Clear} \sim \mathcal{N}(\mu*{\text{Clear}}, \sigma*{\text{Clear}}^2),T∣ω=Clear∼N(μClear​,σClear2​), T∣ω=Cloudy∼N(μCloudy,σCloudy2),T \mid \omega = \text{Cloudy} \sim \mathcal{N}(\mu*{\text{Cloudy}}, \sigma*{\text{Cloudy}}^2),T∣ω=Cloudy∼N(μCloudy​,σCloudy2​), T∣ω=Stormy∼N(μStormy,σStormy2).T \mid \omega = \text{Stormy} \sim \mathcal{N}(\mu*{\text{Stormy}}, \sigma*{\text{Stormy}}^2).T∣ω=Stormy∼N(μStormy​,σStormy2​).
+The parameters μ\muμ and σ2\sigma^2σ2 here can themselves have hyperpriors reflecting our higher-level uncertainty.
+
+P(r∣T,ω)P(r \mid T, \omega)P(r∣T,ω) – Rain Amount Given Temperature and Weather (Continuous):
+The amount of rain might depend both on the weather type and the temperature. Again, we can model rrr as Gaussian:
+r∣T,ω∼N(θ0(ω)+θ1(ω) T,  σr2(ω)),r \mid T, \omega \sim \mathcal{N}(\theta*0(\omega) + \theta_1(\omega)\, T,\; \sigma_r^2(\omega)),r∣T,ω∼N(θ0​(ω)+θ1​(ω)T,σr2​(ω)),
+where the regression coefficients θ0(ω)\theta_0(\omega)θ0​(ω) and θ1(ω)\theta_1(\omega)θ1​(ω) and the variance σr2(ω)\sigma_r^2(\omega)σr2​(ω) are specific to the weather type ω\omegaω.
+– Hyperpriors can be placed on these coefficients (e.g., θ1(ω)∼N(μθ1,τθ12)\theta_1(\omega) \sim \mathcal{N}(\mu*{\theta*1}, \tau*{\theta_1}^2)θ1​(ω)∼N(μθ1​​,τθ1​2​)).
+
+P(d∣ω)P(d \mid \omega)P(d∣ω) – Number of Traffic Incidents Given Weather (Discrete):
+Traffic incidents might be more frequent in bad weather. We can model ddd with a Poisson distribution:
+d∣ω∼Poisson(λ(ω)),d \mid \omega \sim \text{Poisson}(\lambda(\omega)),d∣ω∼Poisson(λ(ω)),
+where λ(ω)\lambda(\omega)λ(ω) is the expected number of incidents given the weather type. Hyperpriors could also be placed on λ(ω)\lambda(\omega)λ(ω) if desired.
+
 Perception
 
 NUTS with continuous relaxation
 NUTS can be applied without having to enumerate discrete sites.
-Update the prior to a posterior.
+Update prior to a posterior.
+
+Defining likelihood functions
+It specifies how probable the sensor observations are given the satet factors. So if we have a sensor that measures temperature with known noise charactresiitfcs we would model that using a normal likelihood. With a mean equal to the true tmeprateuer and a viarbance that reflects senors noise.
+
+We need to check also what the sensors data mean. How can we define how much data are we going to pull from the senor. Here is where we can add statistical quality control and alerts. We are going to monitor the sensor dpedning on previous data to see the variance of the data.
+
 Here is where we might use bayes factor to determine how hypotheses turn into posterieors when we dont have sensorial data.
 
 ---
@@ -268,19 +345,24 @@ In the Bayesian brain hypothesis, sensorial data continuously flow in, whenever 
 Here is where we can introduce control charts. Factors will have random noise but when we have an alert, at that time there has to be an update of beliefs or an environment analysis.
 
 Sensors
+We can use SQC for unexpected variation in sensorial data. This allwows the bayesian brain to analyze the situation
+
 OKay this is intereting the thign is that we need to define sensors in a way that can be used correclty so lets first define sensors. Sensors are the packests of information, coming in discrete, conitnuous or categorical way which have a level of trust. For example in human system, our eyes are trutsful because they are integrated to the brain. It is not third party information. But a story told by a stranger might not be atrustful source. Actually this is weird becasue we still are hearing it so it should be trsutful. sO INT THIS CAE THE WORDS ARTE TRUSTufl because we are hearing them but th einformation might not be. so basically sensors connected to our system are trsustuful but the infromation channel might not be. To make it easier for now we are just going to measure information trust because we are buidling the sensors so they should be trustuful connections.
 
 So are we using like interfaces? So thta we define a sensor and then we could have many types of snesors. A sensor can get infromation. A sensor can send information a sensor has a reliability score. The get infroatino si from the sorufce. so FOR exmaple a wetahter sensro could eb an api. The get information is so that the bayes brain calls the sensor for informairon. thE SEND infromation is that the sensor is sedning infor to the brain. These are different because a brain might want to do something with infromarion that is "encountering" so it is seeking for informaiton or sensorial data migh tjust be flwoing to the brain.
 
+Sensor Examples
+Meta marketing campaign data.
+
 Action space
 Defining the action space.
-In this step we set the actions available to the decision maker. The actions are determined by practical constraints and top-down conisderations.
+In this step we set the actions available to the decision maker. The actions are determined by practical constraints and top-down considerations.
 
 Why top down?
 Top-down considerations
-ACtion space is deinged by oir practical abilities and consterinats, while our state might inlude that birds fly and they take less time transportating we should restrict oruac tion space to car and walk because we are constaied/capped by human capability. Unless we have a alken or a bijjke. This is very interesting because top down considerations are created based on external factors, like tools. These restrictions are imposed externally by design.
+ACtion space is defined by our practical abilities and constraints, while our state might include that birds fly and they take less time transporting we should restrict our action space to car and walk because we are constrained/capped by human capability. Unless we have a alken or a bike. This is very interesting because top down considerations are created based on external factors, like tools. These restrictions are imposed externally by design.
 
-Here also would be a perfect spot for palcoing policy making.
+Here also would be a perfect spot for policy making.
 
 ---
 
@@ -297,15 +379,87 @@ We can use predefined actions we have
 Actions space can be pre-generated, generated purely with LLMs, or generated with isolated system data.
 Like in physics we need to define what is part of the system and what isnt. Information thermodynamics.
 
+Constraints and Feasible Action Space:
+Extrinsic goals may also limit the action space. In a company, you might not have the option to pursue strategies that are too risky or deviate from the brand’s identity. This means the set of actions AAA is defined not only by what is physically or technically possible but also by organizational or regulatory constraints.
 Utility Function
-This quantifies teh goodness or value of taking action a given a particular state s. S can include factors like rain which is linear bayesian, temperature continuous ad traffic discrete.
+This quantifies the goodness or value of taking action given a particular state s. S can include factors like rain which is linear bayesian, temperature continuous and traffic discrete.
 
-IN bayesian brain hypothesis, te utility not typically and explicit symbolic function that is calculate das in fomral decision model. It is thought to emege form natural processes that assign value to outocems. For example brain regions like the orbitrfonrtal cortex and ventromedial pfrontal corrtex are involde in evaluating rewards and costs and their activity refelcats what we might think of as utility,
+Specifying Utility Function
+The utility function typically combines several components such as:
+Base benefit: How desirable an action is independent of weather (e.g. convenience of driving)
+Rain penalty: The negative impact of rain on the action (discomfort if you don't have an umbrella)
+Temperature or other factors: Additional adjustments based on temperature comfort, etc.
 
-In our bayesbrainGPT system, the utility function could be inferred from the language model. But same as humans in work places, utility function could have constraints imposed by the environment or organizatoin. Again we could also give hte power for teh llm to detemiend the constaintes based on organizatoin ifromaiton. Or we can constraint it by defining a utility function. Fore example in marketing, the decision of which add to select is bsed purely on sales. so that is twha tth efunciotn include.
+Example:
+4.2 Mock Values for Each Component
+Assume the following for our four actions:
+Base Benefit B(a,τ)B(a, \tau)B(a,τ)
+Suppose that for a departure at 6 PM:
+For Car:
+
+With τ=Light\tau = \text{Light}τ=Light: B(Car, _)=90B(\text{Car, _}) = 90B(Car, \*)=90 if you have an umbrella, and 959595 if you don’t (perhaps because carrying an umbrella is slightly inconvenient when driving).
+
+For Walk:
+
+B(Walk, _)=80B(\text{Walk, _}) = 80B(Walk, \*)=80 regardless of traffic (walking is less affected by traffic conditions).
+
+(Here “∗\*∗” means that for now, we assume traffic is fixed by our state estimate.)
+Rain Penalty α(a,r)\alpha(a, r)α(a,r)
+Define a linear penalty in rrr (which is predicted from our Bayesian linear regression):
+For Car, Umbrella: α(Car, Umbrella,r)=0.2×r\alpha(\text{Car, Umbrella}, r) = 0.2 \times rα(Car, Umbrella,r)=0.2×r.
+
+For Car, No Umbrella: α(Car, No Umbrella,r)=0.5×r\alpha(\text{Car, No Umbrella}, r) = 0.5 \times rα(Car, No Umbrella,r)=0.5×r.
+
+For Walk, Umbrella: α(Walk, Umbrella,r)=0.3×r\alpha(\text{Walk, Umbrella}, r) = 0.3 \times rα(Walk, Umbrella,r)=0.3×r.
+
+For Walk, No Umbrella: α(Walk, No Umbrella,r)=0.8×r\alpha(\text{Walk, No Umbrella}, r) = 0.8 \times rα(Walk, No Umbrella,r)=0.8×r.
+
+Temperature Penalty β(a,T)\beta(a, T)β(a,T)
+For simplicity, assume that temperature mainly affects walking:
+For Car: β(Car, _,T)=0\beta(\text{Car, _}, T) = 0β(Car, \*,T)=0 (climate control in cars makes temperature irrelevant).
+
+For Walk:
+
+If T=25T = 25T=25°C: β(Walk, _,T)=2\beta(\text{Walk, _}, T) = 2β(Walk, \*,T)=2 (slightly warm, but tolerable).
+
+If T=15T = 15T=15°C: β(Walk, _,T)=1\beta(\text{Walk, _}, T) = 1β(Walk, \*,T)=1 (cooler, slightly more comfortable).
+
+4.3 Putting It Together
+For example, consider state s = (r = 15\,\text{mm},\; T = 25\,^\circ\text{C},\; \tau = \text{Light}):
+For a1=a_1 =a1​= (Car, Umbrella):
+U(a1,s)=90−(0.2×15)−0=90−3=87.U(a_1, s) = 90 - (0.2 \times 15) - 0 = 90 - 3 = 87.U(a1​,s)=90−(0.2×15)−0=90−3=87.
+For a2=a_2 =a2​= (Car, No Umbrella):
+U(a2,s)=95−(0.5×15)−0=95−7.5=87.5.U(a_2, s) = 95 - (0.5 \times 15) - 0 = 95 - 7.5 = 87.5.U(a2​,s)=95−(0.5×15)−0=95−7.5=87.5.
+For a3=a_3 =a3​= (Walk, Umbrella):
+U(a3,s)=80−(0.3×15)−2=80−4.5−2=73.5.U(a_3, s) = 80 - (0.3 \times 15) - 2 = 80 - 4.5 - 2 = 73.5.U(a3​,s)=80−(0.3×15)−2=80−4.5−2=73.5.
+For a4=a_4 =a4​= (Walk, No Umbrella):
+U(a4,s)=80−(0.8×15)−2=80−12−2=66.U(a_4, s) = 80 - (0.8 \times 15) - 2 = 80 - 12 - 2 = 66.U(a4​,s)=80−(0.8×15)−2=80−12−2=66.
+(These are example values for one particular state.)
+
+IN bayesian brain hypothesis, te utility not typically and explicit symbolic function that is calculate das in fomral decision model. It is thought to emege form natural processes that assign value to outocems. For example brain regions like the orbitofrontal cortex and ventromedial prefrontal cortex are involved in evaluating rewards and costs and their activity reflects what we might think of as utility,
+
+In our bayesbrainGPT system, the utility function could be inferred from the language model. But same as humans in workplaces, utility function could have constraints imposed by the environment or organization. Again we could also give the power for the llm to determine the constraints based on organization information. Or we can constraint it by defining a utility function. Fore example in marketing, the decision of which add to select is based purely on sales. so that is what the function include.
+
+Computing Expected Utility for each action
+We combine our updated beliefs about the state with th eutilyt function to compute the expected utility (EU) for each action.
+
+So expected utility for action a is given by:
+EU(a)=∫s​P(s∣Data)U(a,s)ds,
+
+or in discrete approacimation over our state space s:
+EU(a)=s∑​P(s∣Data)U(a,s).
+
+For example, when you're working for a company, your actions might be constrained by corporate strategy, resource limits, or regulatory requirements. In such a case, your utility function would reflect extrinsic goals, such as maximizing company profits, adhering to brand guidelines, or meeting sales targets. This differs from a scenario where you’re free to choose your actions without those external constraints.
+
+Shaping the Utility Function:
+The utility function can explicitly include terms for external objectives. For example, a marketing analyst might define:
+U(Ad)=Expected Revenue−Cost+λ⋅Brand Impact,U(\text{Ad}) = \text{Expected Revenue} - \text{Cost} + \lambda \cdot \text{Brand Impact},U(Ad)=Expected Revenue−Cost+λ⋅Brand Impact,
+where λ\lambdaλ adjusts the weight of long-term brand value—a goal imposed by the company.
 
 Decision Making
-There is some data that
+Bayesian Brain: Decisions emerge from neural computations that weigh rewards, costs, and uncertainties, often implicitly via dopamine and other reward signals.
+
+Both approaches share the same principle: actions (or choices) are evaluated based on their expected outcomes, and the one with the highest “utility” (whether computed neurally or mathematically) is selected.
 
 Actions
 Problems
@@ -325,6 +479,11 @@ The brain likely uses approximate methods (such as sampling or variational infer
 
 multi-variate gaussian  
 More elements
+
+Reactions
+Reactions come from sensorial data. In order to have a fully automatic agent, we need to define reactions and have a way to compute them. Here we will introduce statistical quality control and control charts. These are going to determine alerts and make the Aicon to recompute priors and posteriors to determine actions.
+
+Continuous Relaxation (Discrete Vars)
 Treat each hypothesis as an independent Bayesian update
 
 How Ad performance fluctuated due to random effects.
@@ -357,7 +516,7 @@ In the Bayesian brain view, our brain’s expectations or higher-level goals can
 Statistical Quality Control
 
 Continuous factors
-In the application of bayesian brain hypothesis, we define a prediction of continuous factors.
+In the application of the Bayesian brain hypothesis, we define a prediction of continuous factors.
 
 Confidence in Monte Carlo Simulations
 Confidence can be a parameter fro uncertainty of the system. MIT 6. MOnte carlos siualtion; typically our best guess is what weve seen. But we really should not have ery cmcuh confidence in that guess. Coula have been just an acciednt.
@@ -372,6 +531,9 @@ ASSUMPTIONS:
 Confidence intervals, empirical rule, work if there is nor bias and also if the distribution of the errors in estimates is normal.
 
 pmf and pdf.
+
+Using Tools
+For the Aicon to complete the decisions we can make the tools in different ways. We can make
 Examples
 Break
 For a marketing company, the first prototype of decision making is in digital ads campaigns in Meta. We started with meta as they define clearly what objectives mean in a campaign so that the data they track is towards understanding how different campaigns are doing based on the objective. They also have a great api so that we can give the Aicon the tool to post the ads.
@@ -384,6 +546,9 @@ In order to determine how the aicon is going to be run, we need to see what acti
 What do we want the Aicon to decide from?
 Allocate budget daily for each ads campaign.
 The optima job of the Aicon is to take time as infinite projected time. We could decide this because the decision of taking some step S in the near future t + 1; could eb less optimal that taking step S in later future t + 100; when t is measured in days. But for simplicity of analysis and using a pragmatic point of view instead of a philosophical, we define also a time frame. (Disclaimer, everything should be able to be generated entirely from Aicon; but more on this later)
+Tests
+Metrics to understand if this system works properly.
+
 References
 https://www.youtube.com/watch?v=OgO1gpXSUzU&t=1988s
 

@@ -978,19 +978,18 @@ class SimpleBadAIcon:
                 - 'marketing_roi': Standard marketing ROI utility
                 - 'constrained_marketing_roi': ROI with business constraints
                 - 'weather_dependent_marketing_roi': ROI affected by weather
-                - 'custom_marketing': Customized marketing utility
+                - 'weighted_sum': Multi-objective weighted sum utility
+                - 'pareto': Pareto-optimality based utility
             **kwargs: Parameters for the specific utility function
             
         Returns:
             The created utility function
         """
-        # If using custom marketing utility, use the specialized creator
-        if utility_type == 'custom_marketing':
-            utility_function = create_custom_marketing_utility(**kwargs)
-        else:
-            # For predefined utility types, use the factory
-            # Add action space dimensions if they exist
+        try:
+            # Get the action space if it exists
             action_space = self.get_action_space()
+            
+            # Add action space dimensions if they exist
             if action_space:
                 kwargs['num_ads'] = len([d for d in action_space.dimensions 
                                         if d.name.endswith('_budget')])
@@ -998,20 +997,45 @@ class SimpleBadAIcon:
                                     for d in action_space.dimensions 
                                     if d.name.endswith('_budget')]
             
-            # Create the utility function
-            utility_function = create_utility_function(utility_type, **kwargs)
-        
-        # Check if this is a TensorFlow utility and store the info
-        is_tensorflow_utility = isinstance(utility_function, TensorFlowUtilityFunction)
-        
-        # Store in brain - if it's a TensorFlow utility, we need to adapt it
-        # Store the actual object, not the callable
-        self.brain.utility_function = utility_function
-        
-        print(f"Created {utility_type} utility function: {utility_function.name}")
-        print(f"Description: {utility_function.description}")
-        
-        return utility_function
+            # Create the utility function using the factory
+            utility_function = create_utility(utility_type, action_space=action_space, **kwargs)
+            
+            # Store in brain
+            self.brain.utility_function = utility_function
+            
+            print(f"Created {utility_type} utility function: {utility_function.name}")
+            print(f"Description: {utility_function.description}")
+            
+            return utility_function
+            
+        except Exception as e:
+            print(f"Could not create utility function: {e}")
+            
+            # If utility_type is 'help', log available utility types
+            if utility_type == 'help':
+                print(f"Available utility types: {list(UTILITY_FACTORIES.keys())}")
+                return None
+                
+            # Fallback to a simple utility function
+            if utility_type == 'marketing_roi':
+                def simple_utility(action, state_sample):
+                    # Simple profit calculation (20% ROI)
+                    total_budget = sum(value for key, value in action.items() if key.endswith('_budget'))
+                    return total_budget * 0.2
+                    
+                # Use LambdaUtility from the new module
+                from aicons.bayesbrainGPT.utility_function.custom_utility import LambdaUtility
+                utility_function = LambdaUtility(
+                    evaluation_fn=simple_utility,
+                    name="Simple Marketing ROI Utility",
+                    description="Fallback utility function with fixed 20% ROI"
+                )
+                
+                self.brain.utility_function = utility_function
+                return utility_function
+            else:
+                print(f"No fallback available for utility type: {utility_type}")
+                return None
     
     def find_best_action(self, num_samples: int = 100, use_gradient: bool = False):
         """

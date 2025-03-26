@@ -63,9 +63,18 @@ class BaseAIcon:
                 self.brain.perception = BayesianPerception(self.brain)
             except ImportError:
                 print("BayesianPerception module not found, perception features will be limited")
+                
+            # Try to initialize BayesianState for advanced state representation
+            try:
+                from aicons.bayesbrainGPT.state_representation.bayesian_state import BayesianState
+                self.bayesian_state = BayesianState()
+            except ImportError:
+                print("BayesianState module not found, advanced state representation will be limited")
+                self.bayesian_state = None
         except ImportError:
             print("Warning: BayesBrain module not found. Limited functionality available.")
             self.brain = None
+            self.bayesian_state = None
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert AIcon to a dictionary representation for serialization."""
@@ -218,6 +227,21 @@ class BaseAIcon:
             current_state[name] = factor
             self.brain.set_state_factors(current_state)
         
+        # Also add to bayesian_state if available
+        if self.bayesian_state:
+            try:
+                # Add as continuous latent variable
+                self.bayesian_state.add_continuous_latent(
+                    name=name,
+                    mean=float(value),
+                    uncertainty=float(uncertainty),
+                    description=description or f"Continuous factor: {name}",
+                    lower_bound=lower_bound,
+                    upper_bound=upper_bound
+                )
+            except Exception as e:
+                print(f"Failed to add to BayesianState: {e}")
+        
         # Mark state as changed
         self.mark_state_changed()
         
@@ -283,6 +307,20 @@ class BaseAIcon:
             current_state = self.brain.get_state_factors() or {}
             current_state[name] = factor
             self.brain.set_state_factors(current_state)
+        
+        # Also add to bayesian_state if available
+        if self.bayesian_state:
+            try:
+                # Add as categorical latent variable
+                self.bayesian_state.add_categorical_latent(
+                    name=name,
+                    initial_value=value,
+                    possible_values=categories,
+                    description=description or f"Categorical factor: {name}",
+                    probs=probs
+                )
+            except Exception as e:
+                print(f"Failed to add to BayesianState: {e}")
         
         # Mark state as changed
         self.mark_state_changed()
@@ -364,6 +402,20 @@ class BaseAIcon:
             current_state = self.brain.get_state_factors() or {}
             current_state[name] = factor
             self.brain.set_state_factors(current_state)
+            
+        # Also add to bayesian_state if available
+        if self.bayesian_state:
+            try:
+                # Add as discrete latent variable
+                self.bayesian_state.add_discrete_latent(
+                    name=name,
+                    initial_value=int(value),
+                    description=description or f"Discrete factor: {name}",
+                    min_value=min_value,
+                    max_value=max_value
+                )
+            except Exception as e:
+                print(f"Failed to add to BayesianState: {e}")
         
         # Mark state as changed
         self.mark_state_changed()
@@ -474,10 +526,54 @@ class BaseAIcon:
             print("BayesianPerception not initialized, cannot update from sensor")
             return False
         
-        success = self.brain.perception.update_from_sensor(sensor_name, environment, factor_mapping)
-        if success:
-            self.mark_state_changed()
-        return success
+        try:
+            # Update beliefs using the brain's perception component
+            success = self.brain.perception.update_from_sensor(sensor_name, environment, factor_mapping)
+            
+            if success:
+                # Mark state as changed
+                self.mark_state_changed()
+                
+                # Update hierarchical factors if available
+                if self.bayesian_state:
+                    # Update any hierarchical factors based on their parents
+                    for name, factor in self.state_factors.items():
+                        if "parent_factors" in factor:
+                            try:
+                                # Get current values of parent factors
+                                parent_values = {
+                                    p: self.state_factors[p]["value"] 
+                                    for p in factor["parent_factors"]
+                                    if p in self.state_factors
+                                }
+                                
+                                # Predict new value based on parents
+                                if name in self.bayesian_state.factors:
+                                    hierarchical_factor = self.bayesian_state.factors[name]
+                                    updated_value = hierarchical_factor.predict_from_parents(parent_values)
+                                    
+                                    # Update in state_factors
+                                    factor["value"] = updated_value
+                                    factor["params"]["loc"] = updated_value
+                                    
+                                    # Update in brain
+                                    if self.brain:
+                                        current_state = self.brain.get_state_factors() or {}
+                                        if name in current_state:
+                                            current_state[name]["value"] = updated_value
+                                            current_state[name]["params"]["loc"] = updated_value
+                                            self.brain.set_state_factors(current_state)
+                                            
+                            except Exception as e:
+                                print(f"Failed to update hierarchical factor {name}: {e}")
+            
+            return success
+            
+        except Exception as e:
+            print(f"Error updating from sensor: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
     
     def update_from_all_sensors(self, environment=None):
         """
@@ -493,10 +589,54 @@ class BaseAIcon:
             print("BayesianPerception not initialized, cannot update from sensors")
             return False
         
-        success = self.brain.perception.update_all(environment)
-        if success:
-            self.mark_state_changed()
-        return success
+        try:
+            # Update beliefs using the brain's perception component
+            success = self.brain.perception.update_all(environment)
+            
+            if success:
+                # Mark state as changed
+                self.mark_state_changed()
+                
+                # Update hierarchical factors if available
+                if self.bayesian_state:
+                    # Update any hierarchical factors based on their parents
+                    for name, factor in self.state_factors.items():
+                        if "parent_factors" in factor:
+                            try:
+                                # Get current values of parent factors
+                                parent_values = {
+                                    p: self.state_factors[p]["value"] 
+                                    for p in factor["parent_factors"]
+                                    if p in self.state_factors
+                                }
+                                
+                                # Predict new value based on parents
+                                if name in self.bayesian_state.factors:
+                                    hierarchical_factor = self.bayesian_state.factors[name]
+                                    updated_value = hierarchical_factor.predict_from_parents(parent_values)
+                                    
+                                    # Update in state_factors
+                                    factor["value"] = updated_value
+                                    factor["params"]["loc"] = updated_value
+                                    
+                                    # Update in brain
+                                    if self.brain:
+                                        current_state = self.brain.get_state_factors() or {}
+                                        if name in current_state:
+                                            current_state[name]["value"] = updated_value
+                                            current_state[name]["params"]["loc"] = updated_value
+                                            self.brain.set_state_factors(current_state)
+                                            
+                            except Exception as e:
+                                print(f"Failed to update hierarchical factor {name}: {e}")
+            
+            return success
+            
+        except Exception as e:
+            print(f"Error updating from sensors: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
     
     def get_state(self, format_nicely: bool = False):
         """
@@ -704,6 +844,7 @@ class BaseAIcon:
                 - 'marketing': For marketing campaign optimization
                 - 'time_budget': For time-based budget allocation
                 - 'multi_campaign': For multi-campaign budget allocation
+                - 'custom': For custom action spaces with specific dimensions
             **kwargs: Additional parameters specific to the action space type
                 
         Returns:
@@ -717,37 +858,72 @@ class BaseAIcon:
             # Import action space components
             from aicons.bayesbrainGPT.decision_making.action_space import (
                 ActionSpace, 
+                ActionDimension,
                 create_budget_allocation_space,
                 create_time_budget_allocation_space,
                 create_multi_campaign_action_space,
                 create_marketing_ads_space
             )
             
-            # For a fully manual definition, directly use the provided dimensions and constraints
-            if 'dimensions' in kwargs:
-                dimensions = kwargs.get('dimensions', {})
+            # Create the appropriate action space based on space_type
+            action_space = None
+            
+            if space_type == 'custom':
+                # Get dimension specifications
+                dimensions_specs = kwargs.get('dimensions_specs', [])
                 constraints = kwargs.get('constraints', [])
                 
-                action_space = ActionSpace(
-                    dimensions=dimensions,
-                    constraints=constraints
-                )
-            
-            # Otherwise use predefined action space creators
+                if not dimensions_specs:
+                    raise ValueError("Custom action space requires dimensions_specs list")
+                
+                # Create ActionDimension objects
+                dimensions = []
+                for spec in dimensions_specs:
+                    # Extract dimension parameters
+                    name = spec.get('name')
+                    dim_type = spec.get('type', 'continuous')
+                    
+                    if not name:
+                        raise ValueError("Each dimension spec must include a 'name'")
+                    
+                    # Create appropriate dimension based on type
+                    if dim_type == 'discrete':
+                        values = spec.get('values')
+                        if values is None:
+                            raise ValueError(f"Discrete dimension '{name}' must specify 'values'")
+                        dimensions.append(ActionDimension(
+                            name=name,
+                            dim_type='discrete',
+                            values=values
+                        ))
+                    elif dim_type == 'continuous':
+                        min_value = spec.get('min_value')
+                        max_value = spec.get('max_value')
+                        step = spec.get('step')
+                        
+                        if min_value is None or max_value is None:
+                            raise ValueError(f"Continuous dimension '{name}' must specify 'min_value' and 'max_value'")
+                        
+                        dimensions.append(ActionDimension(
+                            name=name,
+                            dim_type='continuous',
+                            min_value=min_value,
+                            max_value=max_value,
+                            step=step
+                        ))
+                    else:
+                        raise ValueError(f"Unknown dimension type: {dim_type}")
+                
+                # Create the ActionSpace
+                action_space = ActionSpace(dimensions=dimensions, constraints=constraints)
+                
             elif space_type == 'budget_allocation':
                 # Budget allocation across items
                 total_budget = kwargs.get('total_budget', 1000.0)
                 items = kwargs.get('items', [])
-                step_size = kwargs.get('step_size', 0.01)
+                budget_step = kwargs.get('budget_step', 10.0)
                 min_budget = kwargs.get('min_budget', 0.0)
                 
-                # Convert step_size from percentage to absolute if needed
-                if 0 < step_size < 1:
-                    budget_step = step_size * total_budget
-                else:
-                    budget_step = step_size
-                    
-                # Create the action space
                 action_space = create_budget_allocation_space(
                     total_budget=total_budget,
                     num_ads=len(items),
@@ -805,76 +981,82 @@ class BaseAIcon:
             # Set the action space in the brain
             if action_space and hasattr(self.brain, 'set_action_space'):
                 self.brain.set_action_space(action_space)
-                print(f"Created {space_type} action space")
+                print(f"Created {space_type} action space with {len(action_space.dimensions)} dimensions")
             
             return action_space
             
         except Exception as e:
             print(f"Could not create action space: {e}")
+            import traceback
+            traceback.print_exc()
             return None
     
-    def create_utility_function(self, utility_type: str = 'marketing_roi', **kwargs):
+    def create_utility_function(self, utility_type='marketing_roi', **kwargs):
         """
-        Create a utility function for decision-making.
-        
+        Create a utility function for evaluating actions.
+
         Args:
-            utility_type: Type of utility function to create. Options include:
-                - 'marketing_roi': For marketing ROI optimization
+            utility_type (str): Type of utility function to create
+                - 'marketing_roi': For marketing return on investment calculations
                 - 'constrained_marketing_roi': Marketing ROI with business constraints
-                - 'weather_dependent_marketing_roi': Weather-sensitive marketing ROI
-                - 'custom': Custom utility function
-            **kwargs: Additional parameters specific to the utility function type
-                
+                - 'weighted_sum': Combination of multiple utility functions
+                - 'multiobjective': For multi-objective optimization
+                - 'custom': For custom utility functions
+            **kwargs: Additional arguments for the specific utility function
+
         Returns:
-            The created utility function
+            A utility function object that can evaluate actions given state
         """
         if not self.brain:
             print("BayesBrain not available, cannot create utility function")
             return None
-
+        
         try:
-            # Import utility function factory
-            from aicons.bayesbrainGPT.utility_function.utility_function import (
-                create_utility_function, 
-                create_custom_marketing_utility
-            )
+            # Check for action space
+            action_space = self.brain.get_action_space()
+            if not action_space:
+                print("Warning: No action space defined. Create an action space before defining utility.")
             
-            # If a function is directly provided, use it as custom
-            if 'function' in kwargs:
-                function = kwargs.pop('function')
-                name = kwargs.pop('name', 'custom_utility')
+            # Import utility components
+            try:
+                from aicons.bayesbrainGPT.utility_function import create_utility
                 
-                utility_function = create_utility_function(
-                    function=function,
-                    name=name
+                # Create utility function
+                utility = create_utility(
+                    utility_type=utility_type, 
+                    action_space=action_space,
+                    **kwargs
                 )
-            
-            # Otherwise use the utility_type to create predefined types
-            elif utility_type == 'custom_marketing':
-                utility_function = create_custom_marketing_utility(**kwargs)
-            else:
-                # Use action space dimensions if available
-                action_space = self.brain.get_action_space()
-                if action_space:
-                    # Add information about dimensions to kwargs
-                    kwargs['num_ads'] = len([d for d in action_space.dimensions 
-                                           if hasattr(d, 'name') and d.name.endswith('_budget')])
-                    kwargs['ad_names'] = [d.name.replace('_budget', '') 
-                                         for d in action_space.dimensions 
-                                         if hasattr(d, 'name') and d.name.endswith('_budget')]
                 
-                # Create the utility function using the factory
-                utility_function = create_utility_function(utility_type, **kwargs)
-            
-            # Set the utility function in the brain
-            if utility_function and hasattr(self.brain, 'set_utility_function'):
-                self.brain.set_utility_function(utility_function)
-                print(f"Created {utility_type} utility function")
-            
-            return utility_function
-            
+                # Set in brain
+                self.brain.set_utility_function(utility)
+                print(f"Created utility function: {utility.name if hasattr(utility, 'name') else utility_type}")
+                return utility
+                
+            except ImportError:
+                print("BayesBrainGPT utility module not available. Using simplified utility function.")
+                
+                # Simple fallback utility function for basic cases
+                if utility_type == 'marketing_roi':
+                    def simple_utility(action, state):
+                        # Extract budget values from action
+                        total_budget = sum(value for key, value in action.items() if key.endswith('_budget'))
+                        # Simple ROI calculation
+                        roi_multiplier = kwargs.get('roi_multiplier', 0.2)
+                        return total_budget * roi_multiplier
+                    
+                    # Set in brain
+                    self.brain.set_utility_function(simple_utility)
+                    print(f"Created simple {utility_type} utility function")
+                    return simple_utility
+                else:
+                    print(f"Utility type '{utility_type}' not available in fallback mode")
+                    return None
+        
         except Exception as e:
-            print(f"Could not create utility function: {e}")
+            print(f"Error creating utility function: {e}")
+            import traceback
+            traceback.print_exc()
             return None
     
     def find_best_action(self, num_samples: int = 100, use_gradient: bool = False):
@@ -894,21 +1076,159 @@ class BaseAIcon:
         
         try:
             # Make sure we have an action space and utility function
-            if self.brain.get_action_space() is None:
-                raise ValueError("Cannot find best action without an action space. Call create_action_space() first.")
-                
-            if self.brain.get_utility_function() is None:
-                raise ValueError("Cannot find best action without a utility function. Call create_utility_function() first.")
+            action_space = self.brain.get_action_space()
+            if action_space is None:
+                print("Cannot find best action without an action space. Call create_action_space() first.")
+                return None, 0.0
             
-            # Set the number of samples
+            utility_function = self.brain.get_utility_function()
+            if utility_function is None:
+                print("Cannot find best action without a utility function. Call create_utility_function() first.")
+                return None, 0.0
+            
+            # Set the number of samples in the brain's decision parameters
             if hasattr(self.brain, 'decision_params'):
                 self.brain.decision_params["num_samples"] = num_samples
             
-            # Use the brain's find_best_action method
+            # Simply delegate to the brain's find_best_action method
             return self.brain.find_best_action(num_samples=num_samples, use_gradient=use_gradient)
+        
         except Exception as e:
             print(f"Error finding best action: {e}")
+            import traceback
+            traceback.print_exc()
             return None, 0.0
+    
+    def add_hierarchical_factor(self, name: str, parent_factors: List[str], 
+                               relation_type: str = "linear", 
+                               parameters: Dict = None,
+                               uncertainty: float = 1.0,
+                               description: str = ""):
+        """
+        Add a hierarchical factor that depends on other factors.
+        
+        Args:
+            name: Factor name
+            parent_factors: List of parent factor names this factor depends on
+            relation_type: Type of relationship (linear, nonlinear)
+            parameters: Parameters defining the relationship
+            uncertainty: Uncertainty in the relationship
+            description: Optional description
+            
+        Returns:
+            The created hierarchical factor
+        """
+        if not self.bayesian_state:
+            print("BayesianState not available, cannot add hierarchical factor")
+            return None
+            
+        try:
+            # Create parent factors dictionary
+            parent_dict = {}
+            for parent in parent_factors:
+                if parent in self.state_factors:
+                    parent_dict[parent] = self.state_factors[parent]["value"]
+                else:
+                    raise ValueError(f"Parent factor {parent} not found")
+            
+            # Set default parameters if none provided
+            if parameters is None:
+                # Default to small random weights
+                parameters = {
+                    "weights": {p: np.random.normal(0, 0.1) for p in parent_factors},
+                    "intercept": np.random.normal(0, 0.1)
+                }
+            
+            # Add hierarchical latent variable to BayesianState
+            self.bayesian_state.add_hierarchical_latent(
+                name=name,
+                parents=parent_dict,
+                relation_type=relation_type,
+                parameters=parameters,
+                uncertainty=uncertainty,
+                description=description or f"Hierarchical factor: {name}"
+            )
+            
+            # Get the current value prediction based on parents
+            initial_value = self.bayesian_state.factors[name].predict_from_parents(parent_dict)
+            
+            # Create simplified version for standard state factors
+            factor = {
+                "type": "continuous",
+                "distribution": "normal",
+                "params": {"loc": float(initial_value), "scale": float(uncertainty)},
+                "value": float(initial_value),
+                "parent_factors": parent_factors,
+                "relationship": {"type": relation_type, "parameters": parameters},
+                "description": description or f"Hierarchical factor: {name}"
+            }
+            
+            # Store in state_factors
+            self.state_factors[name] = factor
+            
+            # Update the brain's state
+            if self.brain:
+                current_state = self.brain.get_state_factors() or {}
+                current_state[name] = factor
+                self.brain.set_state_factors(current_state)
+            
+            # Mark state as changed
+            self.mark_state_changed()
+            
+            return factor
+            
+        except Exception as e:
+            print(f"Failed to add hierarchical factor: {e}")
+            return None
+
+    
+    def create_hierarchical_model(self):
+        """
+        Create a hierarchical generative model from the current state factors.
+        
+        This enables more sophisticated Bayesian inference by capturing
+        dependencies between factors.
+        
+        Returns:
+            True if the model was created successfully
+        """
+        if not self.bayesian_state:
+            print("BayesianState not available, cannot create hierarchical model")
+            return False
+            
+        try:
+            # Create joint distribution based on state factors
+            self.bayesian_state.create_joint_distribution()
+            print("Created hierarchical model with joint distribution")
+            
+            # Mark brain as changed
+            self.mark_brain_changed()
+            
+            return True
+        except Exception as e:
+            print(f"Failed to create hierarchical model: {e}")
+            return False
+    
+    def sample_from_prior(self, n_samples: int = 1):
+        """
+        Sample from the prior distribution of the hierarchical model.
+        
+        Args:
+            n_samples: Number of samples to draw
+            
+        Returns:
+            Dictionary of samples from prior distribution
+        """
+        if not self.bayesian_state:
+            print("BayesianState not available, cannot sample from prior")
+            return None
+            
+        try:
+            # Sample from the BayesianState's prior
+            return self.bayesian_state.sample_from_prior(n_samples)
+        except Exception as e:
+            print(f"Failed to sample from prior: {e}")
+            return None
     
     def perceive_and_decide(self, environment=None):
         """
@@ -927,12 +1247,59 @@ class BaseAIcon:
             return None, 0.0
         
         try:
-            # Update from all sensors
+            # Step 1: Update beliefs based on sensor data
             if hasattr(self, 'update_from_all_sensors'):
-                self.update_from_all_sensors(environment)
+                success = self.update_from_all_sensors(environment)
+                if not success:
+                    print("Warning: Failed to update from sensors")
             
-            # Find the best action
+            # Step 2: Find the best action based on updated beliefs
             return self.find_best_action()
+        
         except Exception as e:
             print(f"Error in perceive_and_decide: {e}")
-            return None, 0.0 
+            import traceback
+            traceback.print_exc()
+            return None, 0.0
+    
+    # Provide method aliases with the new names that better reflect their roles
+    # These maintain backward compatibility while adopting clearer naming
+    def define_factor_dependency(self, name, parent_factors, relation_type="linear", 
+                              parameters=None, uncertainty=1.0, description=""):
+        """
+        Define a factor that depends on other factors through a specific relationship.
+        
+        This is an alias for add_hierarchical_factor with a more descriptive name that
+        better reflects the inherently hierarchical nature of the system.
+        
+        Args:
+            name: Factor name
+            parent_factors: List of parent factor names this factor depends on
+            relation_type: Type of relationship (linear, nonlinear)
+            parameters: Parameters defining the relationship
+            uncertainty: Uncertainty in the relationship
+            description: Optional description
+            
+        Returns:
+            The created hierarchical factor
+        """
+        return self.add_hierarchical_factor(
+            name=name,
+            parent_factors=parent_factors,
+            relation_type=relation_type,
+            parameters=parameters,
+            uncertainty=uncertainty,
+            description=description
+        )
+    
+    def compile_probabilistic_model(self):
+        """
+        Compile all factors and their relationships into a coherent joint distribution for inference.
+        
+        This is an alias for create_hierarchical_model with a more descriptive name that
+        better reflects the inherently hierarchical nature of the system.
+        
+        Returns:
+            True if the model was compiled successfully
+        """
+        return self.create_hierarchical_model() 
