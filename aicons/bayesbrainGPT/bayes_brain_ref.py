@@ -180,9 +180,7 @@ class BayesBrain:
         if best_action and self.aicon:
             # Let the AIcon make the decision
             success = self.aicon.make_decision(best_action)
-            if not success:
-                print("Warning: AIcon failed to make decision")
-            else:
+            if success:
                 # Update decision state
                 self.last_decision_time = time.time()
                 self.last_action = best_action
@@ -361,7 +359,4 @@ if __name__ == "__main__":
     brain.update_beliefs(sensor_data)
     
     # Make a decision
-    best_action, expected_utility = brain.take_action()
-    
-    print(f"Best action: {best_action}")
-    print(f"Expected utility: {expected_utility}") 
+    best_action, expected_utility = brain.take_action() 

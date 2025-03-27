@@ -93,7 +93,6 @@ class TFSensor(ABC):
             state_factor_name: The name of the factor as known by the state/brain
         """
         self.factor_mapping[sensor_factor_name] = state_factor_name
-        print(f"Sensor '{self.name}' added mapping: {sensor_factor_name} → {state_factor_name}")
     
     def _map_factor_name(self, sensor_factor_name: str) -> str:
         """
@@ -142,17 +141,8 @@ class TFSensor(ABC):
         Returns:
             Dictionary mapping factor names to (value, reliability) tuples
         """
-        # DEBUG: Print what environment looks like at this point
-        print(f"DEBUG - Inside {self.name}.get_data()")
-        print(f"DEBUG - Environment type: {type(environment)}")
-        if environment:
-            print(f"DEBUG - Environment keys: {list(environment.keys())}")
-
         # If streaming, use latest data, otherwise fetch new data
         data = self.latest_data if self.streaming else self.fetch_data(environment)
-        
-        # DEBUG: Print what fetch_data returned
-        print(f"DEBUG - After fetch_data, data: {data}")
         
         # Apply factor mapping and add reliability scores
         mapped_data = {}
@@ -161,9 +151,6 @@ class TFSensor(ABC):
                 # Map the sensor factor name to state factor name
                 state_factor_name = self._map_factor_name(factor)
                 mapped_data[state_factor_name] = (value, self.factor_reliabilities.get(factor, self.default_reliability))
-        
-        # DEBUG: Print the final data with reliability scores
-        print(f"DEBUG - Final mapped_data with reliability: {mapped_data}")
         
         return mapped_data
 
@@ -251,15 +238,6 @@ class MarketingSensor(TFSensor):
         Returns:
             Dictionary mapping factor names to observed values
         """
-        # DEBUG: Print the environment to see what's reaching this method
-        print("DEBUG - Inside MarketingSensor.fetch_data")
-        print(f"DEBUG - Environment type: {type(environment)}")
-        if environment:
-            print(f"DEBUG - Environment keys: {list(environment.keys())}")
-            if "base_conversion_rate" in environment:
-                print(f"DEBUG - base_conversion_rate value: {environment['base_conversion_rate']}")
-                print(f"DEBUG - base_conversion_rate type: {type(environment['base_conversion_rate'])}")
-        
         # In a real application, we would fetch this data from ad platforms
         # Here we simulate it with realistic values and noise
         

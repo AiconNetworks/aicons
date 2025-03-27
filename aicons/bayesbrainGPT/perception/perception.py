@@ -41,23 +41,19 @@ class BayesianPerception:
         if isinstance(sensor, TFSensor):
             # Store TFSensor object
             self.sensors[name] = sensor
-            print(f"Registered TFSensor: {name} (type: {sensor.__class__.__name__})")
             
             # Add factor mapping for this sensor
             if factor_mapping:
                 for sensor_name, state_name in factor_mapping.items():
                     self.factor_name_mapping[sensor_name] = state_name
-                    print(f"  Mapping: {sensor_name} → {state_name}")
         else:
             # Backward compatibility for sensor functions
             self.sensors[name] = sensor
-            print(f"Registered sensor function: {name}")
             
             # Add factor mapping for this sensor
             if factor_mapping:
                 for sensor_name, state_name in factor_mapping.items():
                     self.factor_name_mapping[sensor_name] = state_name
-                    print(f"  Mapping: {sensor_name} → {state_name}")
     
     def add_factor_mapping(self, sensor_factor_name, state_factor_name):
         """
@@ -68,8 +64,7 @@ class BayesianPerception:
             state_factor_name: Corresponding factor name in the state
         """
         self.factor_name_mapping[sensor_factor_name] = state_factor_name
-        print(f"Added factor mapping: {sensor_factor_name} → {state_factor_name}")
-        
+    
     def _map_factor_name(self, sensor_factor_name):
         """
         Map a sensor factor name to a state factor name using the mapping.
@@ -92,15 +87,6 @@ class BayesianPerception:
         Returns:
             Dictionary of observations from all sensors
         """
-        # DEBUG: Print the environment to see what we're passing to sensors
-        print("DEBUG - Inside collect_sensor_data")
-        print(f"DEBUG - Environment type: {type(environment)}")
-        if environment:
-            print(f"DEBUG - Environment keys: {list(environment.keys())}")
-            if "base_conversion_rate" in environment:
-                print(f"DEBUG - base_conversion_rate value: {environment['base_conversion_rate']}")
-                print(f"DEBUG - base_conversion_rate type: {type(environment['base_conversion_rate'])}")
-        
         observations = {}
         
         for name, sensor in self.sensors.items():
@@ -109,13 +95,10 @@ class BayesianPerception:
             
             if isinstance(sensor, TFSensor):
                 # Use TFSensor's get_data method
-                print(f"DEBUG - About to call sensor.get_data(environment) for sensor: {name}")
                 data = sensor.get_data(environment)
-                print(f"Collected data from TFSensor: {name}")
             else:
                 # Backward compatibility for sensor functions
                 data = sensor(environment) if environment else sensor()
-                print(f"Collected data from sensor function: {name}")
             
             # Add to observations with factor name mapping
             for sensor_factor_name, observation in data.items():
@@ -128,8 +111,6 @@ class BayesianPerception:
                 else:
                     # If only value is provided, assume reliability = 1.0
                     observations[state_factor_name] = (observation, 1.0)
-                    
-                print(f"  Factor: {sensor_factor_name} → {state_factor_name}, Value: {observations[state_factor_name][0]}, Reliability: {observations[state_factor_name][1]}")
                 
         return observations
     

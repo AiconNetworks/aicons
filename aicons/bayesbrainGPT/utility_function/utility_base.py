@@ -242,8 +242,6 @@ class UtilityFunction(ABC):
                     learning_rate=learning_rate
                 )
             else:
-                print("Action space does not support gradient optimization")
                 return None, 0.0
         except Exception as e:
-            print(f"Error in gradient optimization: {e}")
             return None, 0.0 

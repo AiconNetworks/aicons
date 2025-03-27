@@ -1,23 +1,23 @@
 """
 Multi-objective utility functions for BayesBrainGPT.
 
-This module provides utility functions for scenarios with multiple, possibly competing objectives.
-It includes weighted combination approaches and Pareto optimization methods.
+This module provides utility functions that handle multiple objectives,
+allowing for trade-offs between different goals.
 """
 
 import numpy as np
 import tensorflow as tf
 from typing import Dict, Any, List, Optional, Callable, Tuple
 
-from aicons.bayesbrainGPT.utility_function.utility_base import UtilityFunction, TensorFlowUtilityFunction
+from aicons.bayesbrainGPT.utility_function.utility_base import UtilityFunction
 
 
 class WeightedSumUtility(UtilityFunction):
     """
-    Utility function that combines multiple objectives through a weighted sum.
+    A utility function that combines multiple objectives using weighted sums.
     
-    This utility calculates a weighted sum of multiple utility functions to balance
-    different possibly competing objectives.
+    This utility function allows for explicit trade-offs between different
+    objectives by assigning weights to each objective.
     """
     
     def __init__(self, utility_functions: List[UtilityFunction] = None, 

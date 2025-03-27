@@ -9,10 +9,10 @@ import numpy as np
 import tensorflow as tf
 from typing import Dict, Any, List, Optional
 
-from aicons.bayesbrainGPT.utility_function.utility_base import UtilityFunction, TensorFlowUtilityFunction
+from aicons.bayesbrainGPT.utility_function.utility_base import UtilityFunction
 
 
-class MarketingROIUtility(UtilityFunction, TensorFlowUtilityFunction):
+class MarketingROIUtility(UtilityFunction):
     """
     Utility function for marketing ROI (Return on Investment).
     
@@ -36,15 +36,8 @@ class MarketingROIUtility(UtilityFunction, TensorFlowUtilityFunction):
                 (e.g., {'revenue': 1.0, 'cost': 1.0, 'risk': 0.5})
             action_space: Optional action space to connect with this utility
         """
-        # Initialize both parent classes explicitly
-        UtilityFunction.__init__(
-            self, 
-            name="Marketing ROI Utility", 
-            description="Calculates expected profit from ad spend",
-            action_space=action_space
-        )
-        TensorFlowUtilityFunction.__init__(
-            self, 
+        # Initialize parent class
+        super().__init__(
             name="Marketing ROI Utility", 
             description="Calculates expected profit from ad spend",
             action_space=action_space
