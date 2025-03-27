@@ -119,83 +119,10 @@ class BayesianPerception:
         Create a TensorFlow Probability joint distribution based on state factors.
         
         Returns:
-            Joint distribution object
+            Joint distribution object from BayesianState
         """
-        state_factors = self.brain.get_state_factors()
-        prior_dict = {}
-        
-        for name, factor in state_factors.items():
-            # Use the TensorFlow distribution directly if available
-            if "tf_distribution" in factor:
-                prior_dict[name] = factor["tf_distribution"]
-                continue
-                
-            # Legacy fallback for state factors without TF distributions
-            if "type" not in factor:
-                continue
-                
-            factor_type = factor["type"]
-            
-            if factor_type == "continuous":
-                # Continuous variable with normal distribution
-                loc = float(factor["params"]["loc"])
-                scale = float(factor["params"]["scale"])
-                
-                # Handle constraints if present
-                if "constraints" in factor and factor["constraints"]:
-                    constraints = factor["constraints"]
-                    
-                    if "lower" in constraints and "upper" in constraints:
-                        # Bounded normal
-                        lower = float(constraints["lower"])
-                        upper = float(constraints["upper"])
-                        prior_dict[name] = tfd.TruncatedNormal(
-                            loc=loc, scale=scale, low=lower, high=upper
-                        )
-                    elif "lower" in constraints:
-                        # Lower bounded (e.g., positive values)
-                        lower = float(constraints["lower"])
-                        # Use transformation to ensure lower bound
-                        prior_dict[name] = tfd.TransformedDistribution(
-                            distribution=tfd.Normal(loc=loc-lower, scale=scale),
-                            bijector=tfb.Chain([tfb.Shift(shift=lower), tfb.Softplus()])
-                        )
-                    elif "upper" in constraints:
-                        # Upper bounded
-                        upper = float(constraints["upper"])
-                        # Use transformation to ensure upper bound
-                        prior_dict[name] = tfd.TransformedDistribution(
-                            distribution=tfd.Normal(loc=upper-loc, scale=scale),
-                            bijector=tfb.Chain([tfb.Shift(shift=upper), tfb.Scale(-1.0), tfb.Softplus()])
-                        )
-                else:
-                    # Unconstrained normal
-                    prior_dict[name] = tfd.Normal(loc=loc, scale=scale)
-                    
-            elif factor_type == "categorical":
-                # Categorical variable
-                categories = factor["categories"]
-                probs = tf.constant(factor["params"]["probs"], dtype=tf.float32)
-                prior_dict[name] = tfd.Categorical(probs=probs)
-                
-            elif factor_type == "discrete":
-                # Discrete variable
-                if "categories" in factor:
-                    # Finite discrete values
-                    categories = factor["categories"]
-                    probs = tf.constant(factor["params"]["probs"], dtype=tf.float32)
-                    prior_dict[name] = tfd.Categorical(probs=probs)
-                else:
-                    # Poisson distribution for counts
-                    rate = float(factor["params"]["rate"])
-                    prior_dict[name] = tfd.Poisson(rate=rate)
-        
-        # Create joint distribution
-        if not prior_dict:
-            # Return None if no valid priors
-            return None
-            
-        return tfd.JointDistributionNamed(prior_dict)
+        # Use the state's joint distribution directly
+        return self.brain.state.create_joint_distribution()
     
     def create_likelihood_function(self, observations):
         """

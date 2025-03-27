@@ -253,29 +253,24 @@ class BayesBrain:
         Set state factors from AIcon.
         
         Args:
-            factors: Dictionary of state factors with their properties
+            factors: Dictionary of state factors with their properties:
+                {
+                    "name": {
+                        "type": str,  # 'continuous', 'categorical', or 'discrete'
+                        "value": Any,
+                        "params": Dict[str, Any],  # Type-specific parameters
+                        "relationships": Optional[Dict[str, Any]]  # Hierarchical relationships
+                    }
+                }
         """
         for name, factor in factors.items():
-            if factor["type"] == "continuous":
-                self.state.add_continuous_latent(
-                    name=name,
-                    mean=factor["value"],
-                    uncertainty=factor["params"]["scale"]
-                )
-            elif factor["type"] == "categorical":
-                self.state.add_categorical_latent(
-                    name=name,
-                    initial_value=factor["value"],
-                    possible_values=factor["categories"],
-                    probs=factor["params"]["probs"]
-                )
-            elif factor["type"] == "discrete":
-                self.state.add_discrete_latent(
-                    name=name,
-                    initial_value=factor["value"],
-                    min_value=factor.get("constraints", {}).get("lower", 0),
-                    max_value=factor.get("constraints", {}).get("upper")
-                )
+            self.state.add_factor(
+                name=name,
+                factor_type=factor["type"],
+                value=factor["value"],
+                params=factor.get("params", {}),
+                relationships=factor.get("relationships")
+            )
     
     def set_utility_function(self, utility: Any) -> None:
         """

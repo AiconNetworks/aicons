@@ -130,11 +130,7 @@ class AIcon(ABC):
         pass
     
     def add_state_factor(self, name: str, factor_type: str, value: Any,
-                        uncertainty: Optional[float] = None,
-                        categories: Optional[List[str]] = None,
-                        probs: Optional[List[float]] = None,
-                        constraints: Optional[Dict[str, float]] = None,
-                        relationships: Optional[Dict[str, Any]] = None) -> LatentVariable:
+                        params: Dict[str, Any], relationships: Optional[Dict[str, Any]] = None) -> Union[ContinuousLatentVariable, CategoricalLatentVariable, DiscreteLatentVariable]:
         """
         Add a state factor through the brain.
         
@@ -145,44 +141,23 @@ class AIcon(ABC):
             name: Name of the factor
             factor_type: Type of factor ('continuous', 'categorical', 'discrete')
             value: Initial value
-            uncertainty: Uncertainty for continuous factors
-            categories: Possible values for categorical factors
-            probs: Probabilities for categorical factors
-            constraints: Constraints for discrete factors
-            relationships: Hierarchical relationships with other factors
+            params: Type-specific parameters:
+                - For continuous: {'scale': float, 'lower_bound': float, 'upper_bound': float}
+                - For categorical: {'categories': List[str], 'probs': List[float]}
+                - For discrete: {'categories': List[int], 'probs': List[float]} or {'rate': float}
+            relationships: Optional hierarchical relationships with other factors
             
         Returns:
             The created latent variable
         """
-        # Validate relationships
-        if relationships is None:
-            relationships = {}
-            
-        # Create factor data
-        factor_data = {
-            "name": name,
-            "type": factor_type,
-            "value": value,
-            "relationships": relationships
-        }
-        
-        # Add type-specific parameters
-        if factor_type == "continuous":
-            factor_data["params"] = {
-                "scale": uncertainty or 1.0
-            }
-        elif factor_type == "categorical":
-            factor_data["params"] = {
-                "categories": categories or [],
-                "probs": probs or []
-            }
-        elif factor_type == "discrete":
-            factor_data["params"] = {
-                "constraints": constraints or {}
-            }
-            
         # Delegate to brain's state
-        return self.brain.state.add_factor(**factor_data)
+        return self.brain.state.add_factor(
+            name=name,
+            factor_type=factor_type,
+            value=value,
+            params=params,
+            relationships=relationships
+        )
     
     def get_state_factors(self) -> Dict[str, Any]:
         """
