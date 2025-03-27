@@ -35,6 +35,7 @@ from .utility_function import create_utility
 from .decision_making.action_space import ActionSpace
 from .state_representation import BayesianState
 from .perception.perception import BayesianPerception
+from .state_representation.latent_variables import ContinuousLatentVariable, CategoricalLatentVariable, DiscreteLatentVariable
 
 class BayesBrain:
     """
@@ -255,32 +256,43 @@ class BayesBrain:
             # Later, we can add logic to check if sensor data indicates
             # significant changes that should trigger a decision
     
-    def set_state_factors(self, factors: Dict[str, Dict[str, Any]]) -> None:
+    def set_state_factors(self, factors: Dict[str, Any]) -> None:
         """
         Set state factors from AIcon.
         
-        Note: This is an internal method used by AIcon.add_state_factor().
-        For adding state factors, always use AIcon.add_state_factor() instead.
-        
         Args:
-            factors: Dictionary of state factors with their properties:
+            factors: Dictionary of factor information in the format:
                 {
                     "name": {
-                        "type": str,  # 'continuous', 'categorical', or 'discrete'
-                        "value": Any,
-                        "params": Dict[str, Any],  # Type-specific parameters
-                        "relationships": Optional[Dict[str, Any]]  # Hierarchical relationships
+                        "type": "continuous" | "categorical" | "discrete",
+                        "value": value,
+                        "params": {
+                            "loc": float,
+                            "scale": float,
+                            "constraints": {"lower": float, "upper": float},
+                            "categories": List[str],
+                            "probs": List[float],
+                            "rate": float
+                        },
+                        "relationships": {
+                            "depends_on": List[str]
+                        }
                     }
                 }
         """
         for name, factor in factors.items():
-            self.state.add_factor(
-                name=name,
-                factor_type=factor["type"],
-                value=factor["value"],
-                params=factor.get("params", {}),
-                relationships=factor.get("relationships")
-            )
+            if name in self.state.factors:
+                # Update existing factor
+                self.state.factors[name].update(factor["value"])
+            else:
+                # Add new factor if it doesn't exist
+                self.state.add_factor(
+                    name=name,
+                    factor_type=factor["type"],
+                    value=factor["value"],
+                    params=factor.get("params", {}),
+                    relationships=factor.get("relationships")
+                )
     
     def set_utility_function(self, utility: Any) -> None:
         """
@@ -355,8 +367,14 @@ class BayesBrain:
                 else:
                     mapped_name = factor_name
                 
-                # Check if the factor already exists (with either name)
-                if mapped_name not in current_state and factor_name not in current_state:
+                # Check if factor exists and validate type
+                if mapped_name in current_state:
+                    existing_factor = current_state[mapped_name]
+                    if existing_factor["type"] != factor_info["type"]:
+                        raise ValueError(f"Type mismatch for factor {mapped_name}: sensor provides {factor_info['type']} but state has {existing_factor['type']}")
+                
+                # Create new factor if it doesn't exist
+                if mapped_name not in current_state:
                     # Extract factor properties from factor_info
                     factor_type = factor_info.get('type', 'continuous')
                     default_value = factor_info.get('default_value', 0.0)
