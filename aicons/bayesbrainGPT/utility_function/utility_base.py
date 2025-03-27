@@ -18,6 +18,7 @@ class UtilityFunction(ABC):
     
     Utility functions evaluate the "goodness" of an action given a specific state.
     They are used to compute expected utility by averaging over posterior samples.
+    All implementations use TensorFlow for efficient computation and gradient-based optimization.
     """
     
     def __init__(self, name: str, description: str = "", action_space=None):
@@ -42,11 +43,27 @@ class UtilityFunction(ABC):
             self.dimensions = action_space.dimensions if hasattr(action_space, 'dimensions') else None
             return True
         return False
-        
+    
     @abstractmethod
+    def evaluate_tf(self, action: tf.Tensor, 
+                   state_samples: Dict[str, tf.Tensor]) -> tf.Tensor:
+        """
+        Evaluate the utility of an action for all state samples using TensorFlow.
+        
+        Args:
+            action: Tensor containing action values
+            state_samples: Dictionary mapping state factor names to tensors
+                (represents multiple samples from the posterior)
+        
+        Returns:
+            Tensor of utility values, one for each sample
+        """
+        pass
+    
     def evaluate(self, action: Dict[str, Any], state_sample: Dict[str, Any]) -> float:
         """
         Evaluate the utility of an action for a specific state sample.
+        This is a wrapper around evaluate_tf for single-sample evaluation.
         
         Args:
             action: Dictionary mapping action dimension names to values
@@ -56,7 +73,28 @@ class UtilityFunction(ABC):
         Returns:
             float: Utility value (higher is better)
         """
-        pass
+        # Convert action to tensor
+        if hasattr(self, 'dimensions') and self.dimensions is not None:
+            action_tensor = tf.constant([action.get(dim.name, 0.0) for dim in self.dimensions])
+        else:
+            # Try to identify budget values from keys
+            budget_values = [v for k, v in action.items() if k.endswith('_budget')]
+            if budget_values:
+                action_tensor = tf.constant(budget_values)
+            else:
+                # Fallback to all numeric values in the action
+                numeric_values = [v for k, v in action.items() 
+                                 if isinstance(v, (int, float))]
+                action_tensor = tf.constant(numeric_values) if numeric_values else tf.constant([0.0])
+        
+        # Convert state sample to tensor format
+        state_tensors = {k: tf.constant([v]) for k, v in state_sample.items()}
+        
+        # Evaluate using TensorFlow
+        utility_tensor = self.evaluate_tf(action_tensor, state_tensors)
+        
+        # Return scalar value
+        return float(utility_tensor[0])
     
     def batch_evaluate(self, action: Dict[str, Any], 
                       state_samples: Dict[str, List[Any]]) -> List[float]:
@@ -78,17 +116,26 @@ class UtilityFunction(ABC):
         first_factor = next(iter(state_samples.values()))
         n_samples = len(first_factor)
         
-        # Evaluate for each sample
-        utilities = []
-        for i in range(n_samples):
-            # Extract the i-th sample
-            sample = {k: v[i] for k, v in state_samples.items()}
-            
-            # Evaluate utility
-            utility = self.evaluate(action, sample)
-            utilities.append(utility)
-            
-        return utilities
+        # Convert action to tensor
+        if hasattr(self, 'dimensions') and self.dimensions is not None:
+            action_tensor = tf.constant([action.get(dim.name, 0.0) for dim in self.dimensions])
+        else:
+            budget_values = [v for k, v in action.items() if k.endswith('_budget')]
+            if budget_values:
+                action_tensor = tf.constant(budget_values)
+            else:
+                numeric_values = [v for k, v in action.items() 
+                                 if isinstance(v, (int, float))]
+                action_tensor = tf.constant(numeric_values) if numeric_values else tf.constant([0.0])
+        
+        # Convert state samples to tensor format
+        state_tensors = {k: tf.constant(v) for k, v in state_samples.items()}
+        
+        # Evaluate using TensorFlow
+        utility_tensor = self.evaluate_tf(action_tensor, state_tensors)
+        
+        # Return list of values
+        return utility_tensor.numpy().tolist()
     
     def expected_utility(self, action: Dict[str, Any], 
                         state_samples: Dict[str, List[Any]]) -> float:
@@ -108,55 +155,7 @@ class UtilityFunction(ABC):
         if not utilities:
             return 0.0
             
-        return np.mean(utilities)
-
-
-class TensorFlowUtilityFunction(ABC):
-    """
-    Abstract base class for TensorFlow-based utility functions.
-    
-    These utility functions work with TensorFlow tensors and can be optimized
-    using gradient-based methods.
-    """
-    
-    def __init__(self, name: str, description: str = "", action_space=None):
-        """
-        Initialize the TensorFlow utility function.
-        
-        Args:
-            name: Name of the utility function
-            description: Description of what this utility function measures
-            action_space: Optional action space that this utility function will evaluate
-        """
-        self.name = name
-        self.description = description
-        
-        # Store dimensions if action space is provided
-        if action_space is not None:
-            self.dimensions = action_space.dimensions if hasattr(action_space, 'dimensions') else None
-    
-    def set_action_space(self, action_space):
-        """Set the action space for this utility function."""
-        if action_space is not None:
-            self.dimensions = action_space.dimensions if hasattr(action_space, 'dimensions') else None
-            return True
-        return False
-    
-    @abstractmethod
-    def evaluate_tf(self, action: tf.Tensor, 
-                   state_samples: Dict[str, tf.Tensor]) -> tf.Tensor:
-        """
-        Evaluate the utility of an action for all state samples.
-        
-        Args:
-            action: Tensor containing action values
-            state_samples: Dictionary mapping state factor names to tensors
-                (represents multiple samples from the posterior)
-        
-        Returns:
-            Tensor of utility values, one for each sample
-        """
-        pass
+        return float(np.mean(utilities))
     
     def evaluate_tf_batch(self, actions: List[Dict[str, Any]],
                          posterior_samples: Dict[str, tf.Tensor] = None) -> tf.Tensor:
@@ -170,32 +169,25 @@ class TensorFlowUtilityFunction(ABC):
         Returns:
             Tensor of expected utilities for each action
         """
-        # Convert actions to tensors - handling both cases where dimensions are available or not
+        # Convert actions to tensors
         action_tensors = []
         for action in actions:
-            # Check if this utility function has dimensions attribute
             if hasattr(self, 'dimensions') and self.dimensions is not None:
-                # Use the dimensions to create tensor
                 action_tensor = tf.constant([action.get(dim.name, 0.0) for dim in self.dimensions])
             else:
-                # Try to identify budget values from keys
                 budget_values = [v for k, v in action.items() if k.endswith('_budget')]
                 if budget_values:
                     action_tensor = tf.constant(budget_values)
                 else:
-                    # Fallback to all numeric values in the action
                     numeric_values = [v for k, v in action.items() 
                                      if isinstance(v, (int, float))]
                     action_tensor = tf.constant(numeric_values) if numeric_values else tf.constant([0.0])
-        
             action_tensors.append(action_tensor)
         
         # Evaluate each action
         utilities = []
         for action_tensor in action_tensors:
-            # Evaluate utility for all samples
             utility = self.evaluate_tf(action_tensor, posterior_samples)
-            # Take mean across samples
             expected_utility = tf.reduce_mean(utility)
             utilities.append(expected_utility)
         

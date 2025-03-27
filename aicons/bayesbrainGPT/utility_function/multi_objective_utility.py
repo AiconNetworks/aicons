@@ -12,7 +12,7 @@ from typing import Dict, Any, List, Optional, Callable, Tuple
 from aicons.bayesbrainGPT.utility_function.utility_base import UtilityFunction, TensorFlowUtilityFunction
 
 
-class WeightedSumUtility(UtilityFunction, TensorFlowUtilityFunction):
+class WeightedSumUtility(UtilityFunction):
     """
     Utility function that combines multiple objectives through a weighted sum.
     
@@ -20,9 +20,10 @@ class WeightedSumUtility(UtilityFunction, TensorFlowUtilityFunction):
     different possibly competing objectives.
     """
     
-    def __init__(self, utility_functions: List[UtilityFunction], 
-                 weights: List[float] = None,
-                 names: List[str] = None):
+    def __init__(self, utility_functions: List[UtilityFunction] = None, 
+                 weights: Dict[str, float] = None,
+                 names: List[str] = None,
+                 action_space=None):
         """
         Initialize the weighted sum utility function.
         
@@ -30,22 +31,35 @@ class WeightedSumUtility(UtilityFunction, TensorFlowUtilityFunction):
             utility_functions: List of utility functions to combine
             weights: Weights for each utility function (default: equal weights)
             names: Optional names for each objective
+            action_space: Optional action space that this utility function will evaluate
         """
+        # Initialize base class first
         super().__init__(name="Weighted Sum Utility", 
-                         description="Calculates a weighted sum of multiple utility functions")
+                         description="Calculates a weighted sum of multiple utility functions",
+                         action_space=action_space)
         
-        self.utility_functions = utility_functions
-        self.n_objectives = len(utility_functions)
+        # Initialize with empty list if no functions provided
+        self.utility_functions = utility_functions or []
+        self.n_objectives = len(self.utility_functions)
         
-        # Default to equal weights if not provided
-        self.weights = weights if weights is not None else [1.0 / self.n_objectives] * self.n_objectives
+        # Set weights from dictionary if provided
+        if weights:
+            self.weights = list(weights.values())
+            self.names = list(weights.keys())
+        else:
+            # Default to equal weights if not provided
+            self.weights = [1.0 / max(1, self.n_objectives)] * max(1, self.n_objectives)
+            self.names = names or [f"objective_{i+1}" for i in range(self.n_objectives)]
         
         # Normalize weights to sum to 1
         total_weight = sum(self.weights)
         self.weights = [w / total_weight for w in self.weights]
         
-        # Set names for each objective
-        self.names = names if names is not None else [f"objective_{i+1}" for i in range(self.n_objectives)]
+        # Set action space for each utility function if provided
+        if action_space is not None and self.utility_functions:
+            for utility_fn in self.utility_functions:
+                if hasattr(utility_fn, 'set_action_space'):
+                    utility_fn.set_action_space(action_space)
     
     def evaluate(self, action: Dict[str, Any], state_sample: Dict[str, Any]) -> float:
         """
@@ -86,11 +100,8 @@ class WeightedSumUtility(UtilityFunction, TensorFlowUtilityFunction):
         
         # Calculate each utility function and apply weights
         for i, utility_fn in enumerate(self.utility_functions):
-            if hasattr(utility_fn, 'evaluate_tf'):
-                value = utility_fn.evaluate_tf(action, state_samples)
-                weighted_sum += value * self.weights[i]
-            else:
-                raise ValueError(f"Utility function {self.names[i]} does not have evaluate_tf method")
+            value = utility_fn.evaluate_tf(action, state_samples)
+            weighted_sum += value * self.weights[i]
         
         return weighted_sum
     
