@@ -320,6 +320,9 @@ class AIcon(ABC):
             # Set it in the brain
             self.brain.set_utility_function(utility)
             
+            # Print the actual utility function
+            print(f"\nUtility Function: {utility}")
+            
             return utility
             
         except Exception as e:

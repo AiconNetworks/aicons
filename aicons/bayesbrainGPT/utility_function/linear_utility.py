@@ -54,6 +54,15 @@ class LinearUtility(UtilityFunction):
         # Convert to tensor
         self.weights = tf.convert_to_tensor(self.weights, dtype=tf.float32)
     
+    def __str__(self) -> str:
+        """Show exactly what this utility function computes."""
+        if isinstance(self.weights, dict):
+            weights_str = ", ".join(f"{k}: {v}" for k, v in self.weights.items())
+        else:
+            weights_str = ", ".join(str(w) for w in self.weights)
+            
+        return f"LinearUtility: Σ(weights * values) where weights = [{weights_str}]"
+    
     def evaluate_tf(
         self,
         action_values: tf.Tensor,
@@ -63,13 +72,33 @@ class LinearUtility(UtilityFunction):
         """
         Evaluate the utility function using TensorFlow.
         
+        For marketing campaigns, this computes:
+        U(Ad) = Expected Revenue - Cost + λ ⋅ Brand Impact
+        
         Args:
-            action_values: Tensor of action values
+            action_values: Tensor of action values (budgets)
             state_samples: Optional tensor of state samples (not used in linear utility)
             **kwargs: Additional arguments (not used)
             
         Returns:
             Tensor of utility values
         """
-        # Compute weighted sum
-        return tf.reduce_sum(action_values * self.weights, axis=-1) 
+        # For now, we'll use a simple linear model where:
+        # Expected Revenue = budget * conversion_rate
+        # Cost = budget
+        # Brand Impact = budget * brand_factor
+        
+        # These would come from historical data or LLM inference
+        conversion_rate = 0.1  # Example: 10% conversion rate
+        brand_factor = 0.05   # Example: 5% brand impact per dollar
+        
+        # Compute components
+        expected_revenue = action_values * conversion_rate
+        cost = action_values
+        brand_impact = action_values * brand_factor
+        
+        # Compute final utility
+        utility = expected_revenue - cost + brand_impact
+        
+        # Apply weights to each campaign's utility
+        return tf.reduce_sum(utility * self.weights, axis=-1) 

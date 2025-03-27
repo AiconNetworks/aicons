@@ -37,6 +37,18 @@ class UtilityFunction(ABC):
         if action_space is not None:
             self.dimensions = action_space.dimensions if hasattr(action_space, 'dimensions') else None
     
+    @abstractmethod
+    def __str__(self) -> str:
+        """
+        Show exactly what this utility function computes.
+        This method must be implemented by all utility functions.
+        
+        Returns:
+            String representation showing the mathematical formula or computation
+            being performed by this utility function.
+        """
+        pass
+    
     def set_action_space(self, action_space):
         """Set the action space for this utility function."""
         if action_space is not None:
@@ -244,4 +256,21 @@ class UtilityFunction(ABC):
             else:
                 return None, 0.0
         except Exception as e:
-            return None, 0.0 
+            return None, 0.0
+    
+    def pprint(self) -> str:
+        """Pretty print the utility function configuration."""
+        output = f"Utility Function: {self.name}\n"
+        output += f"Type: {self.__class__.__name__}\n"
+        output += "Action Space:\n"
+        
+        for dim in self.dimensions:
+            if dim.dim_type == 'continuous':
+                bounds_str = f"[{dim.min_value}, {dim.max_value}]"
+            elif dim.dim_type == 'discrete':
+                bounds_str = f"values: {dim.values}"
+            else:
+                bounds_str = "N/A"
+            output += f"  - {dim.name}: {dim.dim_type} ({bounds_str})\n"
+        
+        return output 

@@ -28,6 +28,10 @@ class MyCustomUtility(UtilityFunction):
         self.param1 = param1
         self.param2 = param2
 
+    def __str__(self) -> str:
+        """Show exactly what this utility function computes."""
+        return f"MyCustomUtility: {self.param1} * value + {self.param2}"
+
     def evaluate_tf(self, action: tf.Tensor,
                    state_samples: Dict[str, tf.Tensor]) -> tf.Tensor:
         """
@@ -64,9 +68,15 @@ class MyCustomUtility(UtilityFunction):
 - Returns a tensor of utility values
 - Use TensorFlow operations for efficient computation
 
+### 4. String Representation
+
+- Implement `__str__` method to show exactly what the utility function computes
+- This is crucial for debugging and understanding the utility function's behavior
+- Should show the mathematical formula or computation being performed
+
 ## Example Implementations
 
-### 1. Simple Linear Utility
+### 1. Linear Utility (Current Implementation)
 
 ```python
 class LinearUtility(UtilityFunction):
@@ -75,16 +85,52 @@ class LinearUtility(UtilityFunction):
         super().__init__(name=name, description=description, action_space=action_space)
         self.weights = weights
 
-    def evaluate_tf(self, action: tf.Tensor,
-                   state_samples: Dict[str, tf.Tensor]) -> tf.Tensor:
-        # Map weights to action dimensions
-        if hasattr(self, 'dimensions') and self.dimensions is not None:
-            weight_list = [self.weights.get(dim.name, 0.0) for dim in self.dimensions]
-        else:
-            weight_list = list(self.weights.values())
+        # Convert weights to tensor if it's a dictionary
+        if isinstance(weights, dict):
+            if action_space is not None and action_space.dimensions is not None:
+                action_names = [dim.name for dim in action_space.dimensions]
+                self.weights = [weights.get(name, 0.0) for name in action_names]
+            else:
+                self.weights = list(weights.values())
 
-        weights_tensor = tf.constant(weight_list, dtype=tf.float32)
-        return tf.reduce_sum(action * weights_tensor, axis=-1)
+        self.weights = tf.convert_to_tensor(self.weights, dtype=tf.float32)
+
+    def __str__(self) -> str:
+        """Show exactly what this utility function computes."""
+        if isinstance(self.weights, dict):
+            weights_str = ", ".join(f"{k}: {v}" for k, v in self.weights.items())
+        else:
+            weights_str = ", ".join(str(w) for w in self.weights)
+        return f"LinearUtility: Σ(weights * values) where weights = [{weights_str}]"
+
+    def evaluate_tf(self, action_values: tf.Tensor,
+                   state_samples: Optional[tf.Tensor] = None,
+                   **kwargs) -> tf.Tensor:
+        """
+        Evaluate the utility function using TensorFlow.
+
+        For marketing campaigns, this computes:
+        U(Ad) = Expected Revenue - Cost + λ ⋅ Brand Impact
+
+        Where:
+        - Expected Revenue = budget * conversion_rate
+        - Cost = budget
+        - Brand Impact = budget * brand_factor
+        """
+        # These would come from historical data or LLM inference
+        conversion_rate = 0.1  # Example: 10% conversion rate
+        brand_factor = 0.05   # Example: 5% brand impact per dollar
+
+        # Compute components
+        expected_revenue = action_values * conversion_rate
+        cost = action_values
+        brand_impact = action_values * brand_factor
+
+        # Compute final utility
+        utility = expected_revenue - cost + brand_impact
+
+        # Apply weights to each campaign's utility
+        return tf.reduce_sum(utility * self.weights, axis=-1)
 ```
 
 ### 2. State-Dependent Utility
@@ -95,6 +141,10 @@ class StateDependentUtility(UtilityFunction):
                  description: str = "", action_space=None):
         super().__init__(name=name, description=description, action_space=action_space)
         self.sensitivity = sensitivity
+
+    def __str__(self) -> str:
+        """Show exactly what this utility function computes."""
+        return f"StateDependentUtility: value * (1 + {self.sensitivity} * state)"
 
     def evaluate_tf(self, action: tf.Tensor,
                    state_samples: Dict[str, tf.Tensor]) -> tf.Tensor:
@@ -115,6 +165,10 @@ class ConstrainedUtility(UtilityFunction):
         super().__init__(name=name, description=description, action_space=action_space)
         self.min_value = min_value
         self.max_value = max_value
+
+    def __str__(self) -> str:
+        """Show exactly what this utility function computes."""
+        return f"ConstrainedUtility: clip(value, {self.min_value}, {self.max_value})"
 
     def evaluate_tf(self, action: tf.Tensor,
                    state_samples: Dict[str, tf.Tensor]) -> tf.Tensor:
@@ -154,9 +208,16 @@ class ConstrainedUtility(UtilityFunction):
    - Handle edge cases gracefully
 
 5. **Documentation**
+
    - Document all parameters
    - Explain the utility function's purpose
    - Provide usage examples
+
+6. **String Representation**
+   - Always implement `__str__` method
+   - Show the mathematical formula or computation
+   - Include key parameters in the string representation
+   - Make it clear what the utility function is computing
 
 ## Integration
 
@@ -206,3 +267,4 @@ Always test your utility function with:
 3. Edge cases and boundary conditions
 4. TensorFlow gradient computation
 5. Integration with other components
+6. String representation output
