@@ -115,17 +115,34 @@ class TFSensor(ABC):
         Subclasses should override this to provide more specific information.
         
         Returns:
-            Dictionary mapping factor names to information about each factor
+            Dictionary mapping factor names to information about each factor:
+            {
+                "factor_name": {
+                    "type": str,  # 'continuous', 'categorical', or 'discrete'
+                    "default_value": Any,  # Default value for the factor
+                    "uncertainty": float,  # Default uncertainty/scale
+                    "lower_bound": Optional[float],  # For continuous/discrete
+                    "upper_bound": Optional[float],  # For continuous/discrete
+                    "categories": Optional[List[Any]],  # For categorical
+                    "description": str  # Human-readable description
+                }
+            }
         """
         # Default implementation returns basic information based on observable_factors
         expected_factors = {}
         
         for factor_name in self.observable_factors:
+            # Get reliability for this factor
+            reliability = self.factor_reliabilities.get(factor_name, self.default_reliability)
+            
             # Create default factor information
             expected_factors[factor_name] = {
                 "type": "continuous",  # Default to continuous
                 "default_value": 0.0,  # Default value
-                "uncertainty": 0.1,    # Default uncertainty
+                "uncertainty": 1.0 - reliability,  # Convert reliability to uncertainty
+                "lower_bound": None,  # No bounds by default
+                "upper_bound": None,  # No bounds by default
+                "categories": None,  # No categories for continuous
                 "description": f"Factor observed by {self.name} sensor"
             }
             

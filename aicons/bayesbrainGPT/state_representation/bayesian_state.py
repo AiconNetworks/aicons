@@ -282,8 +282,9 @@ class BayesianState:
                 if not isinstance(constraints, dict):
                     raise ValueError("Constraints must be a dictionary")
                 if "lower" in constraints and "upper" in constraints:
-                    if constraints["lower"] >= constraints["upper"]:
-                        raise ValueError("Lower bound must be less than upper bound")
+                    if constraints["lower"] is not None and constraints["upper"] is not None:
+                        if constraints["lower"] >= constraints["upper"]:
+                            raise ValueError("Lower bound must be less than upper bound")
                         
         elif factor_type == "categorical":
             required_params = {"categories", "probs"}
@@ -596,6 +597,71 @@ class BayesianState:
             # Multiple samples case
             return [{name: value.numpy() for name, value in zip(self.topological_order, sample)} 
                    for sample in samples]
+
+    def get_state_factors(self) -> Dict[str, Any]:
+        """
+        Get all state factors in a format suitable for the perception system's TFP distributions.
+        
+        Returns:
+            Dictionary containing state factors with their properties:
+            - type: Factor type ('continuous', 'categorical', 'discrete')
+            - value: Current value
+            - distribution: TFP distribution type ('normal', 'truncated_normal', 'categorical', 'poisson')
+            - params: Distribution parameters (loc, scale, probs, etc.)
+            - constraints: Any constraints on the factor
+            - relationships: Hierarchical relationships with other factors
+            - uncertainty: Uncertainty/variance parameter
+        """
+        state_factors = {}
+        
+        for name, factor in self.factors.items():
+            factor_info = {
+                "type": "continuous" if isinstance(factor, ContinuousLatentVariable) else
+                       "categorical" if isinstance(factor, CategoricalLatentVariable) else
+                       "discrete",
+                "value": factor.value,
+                "distribution": None,
+                "params": {},
+                "constraints": {},
+                "relationships": factor.relationships,
+                "uncertainty": None
+            }
+            
+            if isinstance(factor, ContinuousLatentVariable):
+                factor_info["distribution"] = "normal"
+                factor_info["params"] = {
+                    "loc": factor.value,
+                    "scale": factor._uncertainty
+                }
+                if hasattr(factor, 'constraints') and factor.constraints:
+                    factor_info["constraints"] = factor.constraints
+                    if "lower" in factor.constraints or "upper" in factor.constraints:
+                        factor_info["distribution"] = "truncated_normal"
+                factor_info["uncertainty"] = factor._uncertainty
+                
+            elif isinstance(factor, CategoricalLatentVariable):
+                factor_info["distribution"] = "categorical"
+                factor_info["params"] = {
+                    "probs": list(factor.prior_probs.values()),
+                    "categories": list(factor.prior_probs.keys())
+                }
+                
+            else:  # DiscreteLatentVariable
+                if hasattr(factor, 'distribution_params') and 'categories' in factor.distribution_params:
+                    factor_info["distribution"] = "categorical"
+                    factor_info["params"] = {
+                        "probs": factor.distribution_params['probs'],
+                        "categories": factor.distribution_params['categories']
+                    }
+                else:
+                    factor_info["distribution"] = "poisson"
+                    factor_info["params"] = {
+                        "rate": factor.distribution_params.get('rate', float(factor.value))
+                    }
+            
+            state_factors[name] = factor_info
+            
+        return state_factors
 
 
 # For backward compatibility with any code that directly imports EnvironmentState

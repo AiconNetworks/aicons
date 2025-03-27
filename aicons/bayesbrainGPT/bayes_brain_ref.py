@@ -68,7 +68,8 @@ class BayesBrain:
         
         # Core Bayesian components
         self.state = BayesianState()
-        self.perception = None
+        from aicons.bayesbrainGPT.perception.perception import BayesianPerception
+        self.perception = BayesianPerception(self)
         
         # Components provided by AIcon
         self.utility_function = None
@@ -103,7 +104,7 @@ class BayesBrain:
         Returns:
             Dictionary of state factors
         """
-        return self.state.get_factors()
+        return self.state.get_state_factors()
     
     def get_state(self) -> Dict[str, Any]:
         """
@@ -299,10 +300,6 @@ class BayesBrain:
         """
         self.action_space = action_space
     
-    def initialize_perception(self) -> None:
-        """Initialize the perception system for updating beliefs."""
-        self.perception = BayesianPerception(self)
-    
     def set_decision_params(self, params: Dict[str, Any]) -> None:
         """
         Set parameters for decision-making.
@@ -331,7 +328,7 @@ class BayesBrain:
             return []
         return [(self.last_action, self.last_utility, self.last_decision_time)]
     
-    def add_sensor(self, name: str, sensor: Any, factor_mapping: Optional[Dict[str, str]] = None) -> None:
+    def add_sensor(self, name: str, sensor: Any = None, factor_mapping: Optional[Dict[str, str]] = None) -> None:
         """
         Add a sensor to the brain's perception system.
         
@@ -340,9 +337,89 @@ class BayesBrain:
             sensor: The sensor object or function
             factor_mapping: Optional mapping between sensor outputs and state factors
         """
-        if self.perception is None:
-            self.initialize_perception()
+        # Initialize perception if not already done
+        if not hasattr(self, 'perception'):
+            from aicons.bayesbrainGPT.perception.perception import BayesianPerception
+            self.perception = BayesianPerception(self)
+        
+        # Auto-create required factors if sensor has get_expected_factors method
+        if hasattr(sensor, 'get_expected_factors'):
+            expected_factors = sensor.get_expected_factors()
+            current_state = self.state.get_state_factors() or {}
+            
+            # Create any missing factors with default values
+            for factor_name, factor_info in expected_factors.items():
+                # Map the factor name if a mapping exists
+                if factor_mapping and factor_name in factor_mapping:
+                    mapped_name = factor_mapping[factor_name]
+                else:
+                    mapped_name = factor_name
+                
+                # Check if the factor already exists (with either name)
+                if mapped_name not in current_state and factor_name not in current_state:
+                    # Extract factor properties from factor_info
+                    factor_type = factor_info.get('type', 'continuous')
+                    default_value = factor_info.get('default_value', 0.0)
+                    uncertainty = factor_info.get('uncertainty', 0.1)
+                    lower_bound = factor_info.get('lower_bound', None)
+                    upper_bound = factor_info.get('upper_bound', None)
+                    categories = factor_info.get('categories', None)
+                    description = factor_info.get('description', f"Factor from {name} sensor")
+                    
+                    print(f"Auto-creating missing factor: {mapped_name} ({factor_type})")
+                    
+                    # Create the appropriate type of factor
+                    if factor_type == 'continuous':
+                        self.state.add_factor(
+                            name=mapped_name,
+                            factor_type='continuous',
+                            value=default_value,
+                            params={
+                                'loc': default_value,
+                                'scale': uncertainty,
+                                'constraints': {
+                                    'lower': lower_bound,
+                                    'upper': upper_bound
+                                } if lower_bound is not None or upper_bound is not None else None
+                            }
+                        )
+                    elif factor_type == 'categorical' and categories:
+                        self.state.add_factor(
+                            name=mapped_name,
+                            factor_type='categorical',
+                            value=default_value,
+                            params={
+                                'categories': categories,
+                                'probs': [1.0/len(categories)] * len(categories)
+                            }
+                        )
+                    elif factor_type == 'discrete':
+                        if upper_bound is not None:
+                            # Categorical distribution for bounded discrete values
+                            categories = list(range(int(lower_bound or 0), int(upper_bound) + 1))
+                            self.state.add_factor(
+                                name=mapped_name,
+                                factor_type='discrete',
+                                value=default_value,
+                                params={
+                                    'categories': categories,
+                                    'probs': [1.0/len(categories)] * len(categories)
+                                }
+                            )
+                        else:
+                            # Poisson distribution for unbounded discrete values
+                            self.state.add_factor(
+                                name=mapped_name,
+                                factor_type='discrete',
+                                value=default_value,
+                                params={
+                                    'rate': default_value
+                                }
+                            )
+        
+        # Register the sensor with perception
         self.perception.register_sensor(name, sensor, factor_mapping)
+        return sensor
     
     def get_sensors(self) -> List[Callable]:
         """Get the current list of sensors"""
@@ -374,8 +451,6 @@ class BayesBrain:
         Returns:
             True if update was successful
         """
-        if self.perception is None:
-            self.initialize_perception()
         return self.perception.update_from_sensor(sensor_name, environment)
     
     def update_from_all_sensors(self, environment: Any = None) -> bool:
@@ -388,8 +463,6 @@ class BayesBrain:
         Returns:
             True if update was successful
         """
-        if self.perception is None:
-            self.initialize_perception()
         return self.perception.update_all(environment)
 
 # Example usage
