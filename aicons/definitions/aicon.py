@@ -67,10 +67,6 @@ class AIcon(ABC):
         self.state_factors = {}
         self.sensors = {}
         
-        # Action space and utility
-        self.action_space = None
-        self.utility_function = None
-        
         # Tool management
         self.tools = {}
         self._initialize_tools()
@@ -284,9 +280,6 @@ class AIcon(ABC):
             else:
                 raise ValueError(f"Unknown action space type: {space_type}")
             
-            # Store the action space
-            self.action_space = action_space
-            
             # Set it in the brain
             self.brain.set_action_space(action_space)
             
@@ -313,19 +306,16 @@ class AIcon(ABC):
             The created utility function
         """
         try:
-            # Make sure we have an action space
-            if not self.action_space:
+            # Make sure we have an action space in the brain
+            if not self.brain.action_space:
                 raise ValueError("Must define an action space before defining utility function")
             
             # Create utility function
             utility = create_utility(
                 utility_type=utility_type,
-                action_space=self.action_space,
+                action_space=self.brain.action_space,
                 **kwargs
             )
-            
-            # Store the utility function
-            self.utility_function = utility
             
             # Set it in the brain
             self.brain.set_utility_function(utility)

@@ -10,6 +10,8 @@ from typing import List, Tuple, Dict, Any, Union, Optional, Sequence, Callable
 import numpy as np
 import tensorflow as tf
 import tensorflow_probability as tfp
+from tabulate import tabulate
+import json
 
 
 class ActionDimension:
@@ -542,6 +544,115 @@ class ActionSpace:
             
         return dimensions_info
 
+    @staticmethod
+    def print_space(action_space: 'ActionSpace', format: str = 'human') -> str:
+        """
+        Print an action space in the specified format.
+        
+        Args:
+            action_space: The action space to print
+            format: 'human' for human-readable format, 'math' for mathematical format
+            
+        Returns:
+            A formatted string representation of the action space
+        """
+        if format == 'human':
+            return action_space.pprint()
+        elif format == 'math':
+            return action_space.raw_print()
+        else:
+            return str(action_space)
+    
+    def pprint(self) -> str:
+        """
+        Pretty print the action space in a human-readable format.
+        
+        Returns:
+            A formatted string representation of the action space
+        """
+        output = []
+        output.append("Action Space:")
+        output.append("=" * 50)
+        
+        # Print dimensions
+        output.append("\nDimensions:")
+        output.append("-" * 30)
+        
+        for dim in self.dimensions:
+            output.append(f"\nName: {dim.name}")
+            output.append(f"Type: {dim.dim_type}")
+            if dim.dim_type == 'continuous':
+                output.append(f"Range: [{dim.min_value}, {dim.max_value}]")
+                output.append(f"Step: {dim.step}")
+            elif dim.dim_type == 'discrete':
+                output.append(f"Values: {dim.values}")
+        
+        # Print constraints
+        if self.constraints:
+            output.append("\nConstraints:")
+            output.append("-" * 30)
+            for i, constraint in enumerate(self.constraints, 1):
+                output.append(f"\nConstraint {i}:")
+                if isinstance(constraint, dict):
+                    output.append(f"Type: {constraint.get('type', 'unknown')}")
+                    if constraint.get('type') == 'sum':
+                        output.append(f"Dimensions: {constraint.get('dimensions', [])}")
+                        output.append(f"Target sum: {constraint.get('value', 0.0)}")
+                    elif constraint.get('type') == 'ratio':
+                        output.append(f"Dimensions: {constraint.get('dimension1')} / {constraint.get('dimension2')}")
+                        output.append(f"Ratio range: [{constraint.get('min_ratio', 0.0)}, {constraint.get('max_ratio', float('inf'))}]")
+                else:
+                    output.append(f"Type: Function")
+                    output.append(f"Description: {constraint.__doc__ or 'No description available'}")
+        
+        # Print all possible combinations
+        output.append("\nAll Possible Combinations:")
+        output.append("-" * 30)
+        all_actions = self.enumerate_actions()
+        for action in all_actions:
+            output.append(f"Action: {action}")
+        
+        return "\n".join(output)
+    
+    def raw_print(self) -> str:
+        """
+        Print the action space in raw format.
+        
+        Returns:
+            A raw representation of the action space
+        """
+        output = []
+        
+        # Print dimensions
+        dims = []
+        for dim in self.dimensions:
+            if dim.dim_type == 'continuous':
+                dims.append(f"{dim.name}: [{dim.min_value}, {dim.max_value}] step={dim.step}")
+            elif dim.dim_type == 'discrete':
+                dims.append(f"{dim.name}: {dim.values}")
+        
+        output.append(f"dimensions: {dims}")
+        
+        # Print constraints
+        constraints = []
+        for constraint in self.constraints:
+            if isinstance(constraint, dict):
+                constraints.append(str(constraint))
+            else:
+                constraints.append(str(constraint))
+        
+        output.append(f"constraints: {constraints}")
+        
+        # Print all possible combinations
+        all_actions = self.enumerate_actions()
+        output.append(f"actions: {all_actions}")
+        
+        return "\n".join(output)
+    
+    def __repr__(self) -> str:
+        """Default string representation"""
+        return f"ActionSpace(dimensions={len(self.dimensions)}, constraints={len(self.constraints)})"
+
 
 # Utility functions for creating common action spaces
 
@@ -749,138 +860,3 @@ def create_marketing_ads_space(
     # Store total_budget as an attribute for reference
     action_space.total_budget = total_budget
     return action_space
-
-
-# Example usage
-if __name__ == "__main__":
-    # Example 1: Simple budget allocation across 3 ads
-    budget_space = create_budget_allocation_space(
-        total_budget=500.0,
-        num_ads=3,
-        budget_step=100.0
-    )
-    
-    # Sample an action and print it
-    action = budget_space.sample()
-    print("Sample budget allocation:")
-    print(action)
-    
-    # Example 2: Budget allocation across 2 ads and 3 days
-    time_budget_space = create_time_budget_allocation_space(
-        total_budget=600.0,
-        num_ads=2,
-        num_days=3,
-        budget_step=50.0
-    )
-    
-    # Sample an action and print it
-    action = time_budget_space.sample()
-    print("\nSample time-based budget allocation:")
-    print(action)
-    
-    # Example 3: Multi-campaign with different parameters
-    campaigns = {
-        "summer_sale": {
-            "total_budget": 1000.0,
-            "min_budget": 0.0,
-            "max_budget": 500.0,
-            "days": ["mon", "tue", "wed"]
-        },
-        "product_launch": {
-            "total_budget": 1500.0,
-            "min_budget": 100.0,
-            "max_budget": 1000.0,
-            "days": ["thu", "fri", "sat", "sun"]
-        }
-    }
-    
-    multi_campaign_space = create_multi_campaign_action_space(
-        campaigns=campaigns,
-        budget_step=100.0
-    )
-    
-    # Sample an action and print it
-    action = multi_campaign_space.sample()
-    print("\nSample multi-campaign budget allocation:")
-    print(action)
-    
-    # Example 4: Marketing ads space specifically for 2 ads
-    marketing_space = create_marketing_ads_space(
-        total_budget=1000.0,
-        num_ads=2,
-        budget_step=10.0
-    )
-    
-    # Sample an action and print it
-    action = marketing_space.sample()
-    print("\nSample marketing ads budget allocation:")
-    print(action)
-    
-    # TensorFlow utility function example (would need TF imported)
-    try:
-        import tensorflow as tf
-        
-        # Define a simple TF utility function for budget allocation
-        def tf_utility_fn(action, posterior_samples):
-            # Unpack action
-            budget_ad1, budget_ad2 = action[0], action[1]
-            
-            # Unpack posterior samples
-            phi = posterior_samples['phi']  # Shape [num_samples, 2]
-            c = posterior_samples['c']      # Shape [num_samples, 2]
-            delta = posterior_samples['delta'] # Shape [num_samples, 3]
-            
-            # Compute sales for each ad across all samples
-            # (Assuming 3 days with equal budget allocation)
-            sales_ad1 = 0
-            sales_ad2 = 0
-            
-            for d in range(3):  # 3 days
-                # Daily budget is 1/3 of total
-                daily_budget1 = budget_ad1 / 3
-                daily_budget2 = budget_ad2 / 3
-                
-                # Sales = budget * conversion_rate * day_multiplier
-                sales_ad1 += daily_budget1 * phi[:, 0] * delta[:, d]
-                sales_ad2 += daily_budget2 * phi[:, 1] * delta[:, d]
-            
-            # Cost = budget * cost_per_click
-            cost_ad1 = budget_ad1 * c[:, 0]
-            cost_ad2 = budget_ad2 * c[:, 1]
-            
-            # Revenue = sales * revenue_per_sale
-            revenue_per_sale = 10.0
-            revenue_ad1 = sales_ad1 * revenue_per_sale
-            revenue_ad2 = sales_ad2 * revenue_per_sale
-            
-            # Utility = total revenue - total cost
-            utility = (revenue_ad1 + revenue_ad2) - (cost_ad1 + cost_ad2)
-            
-            return utility
-        
-        # Create mock posterior samples (normally from HMC or NUTS)
-        mock_posterior = {
-            'phi': tf.random.normal([100, 2], mean=0.05, stddev=0.01),
-            'c': tf.random.gamma([100, 2], alpha=5.0, beta=7.0),
-            'delta': tf.exp(tf.random.normal([100, 3], mean=0.0, stddev=0.3))
-        }
-        
-        # Evaluate actions using the TF utility function
-        best_action, expected_utility = marketing_space.evaluate_actions_tf(
-            tf_utility_fn, mock_posterior, num_actions=50
-        )
-        
-        print("\nBest action using TF evaluation:")
-        print(best_action)
-        print(f"Expected utility: {expected_utility}")
-        
-        # Try gradient-based optimization for continuous space
-        optimized_action = marketing_space.optimize_action_tf(
-            tf_utility_fn, mock_posterior, num_steps=100
-        )
-        
-        print("\nOptimized action using TF gradient descent:")
-        print(optimized_action)
-        
-    except ImportError:
-        print("\nTensorFlow not available for TF examples")
