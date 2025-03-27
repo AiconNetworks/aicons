@@ -6,7 +6,7 @@ where the brain's internal model consists of latent variables that explain senso
 """
 
 import json
-from typing import Dict, Any, List, Optional, Union, Callable
+from typing import Dict, Any, List, Optional, Union, Callable, Set
 import numpy as np
 from pathlib import Path
 import tensorflow as tf
@@ -197,26 +197,26 @@ class BayesianState:
             shift = float(lower_bound)
             tf_dist = tfd.TransformedDistribution(
                 distribution=tfd.Normal(loc=float(mean)-shift, scale=float(uncertainty)),
-                bijector=tfb.Shift(shift=shift) @ tfb.Softplus()
+                bijector=tfb.Chain([tfb.Shift(shift=shift), tfb.Softplus()])
             )
         elif upper_bound is not None:
             # Transformed distribution for upper-bounded variables
             shift = float(upper_bound)
             tf_dist = tfd.TransformedDistribution(
                 distribution=tfd.Normal(loc=shift-float(mean), scale=float(uncertainty)),
-                bijector=tfb.Shift(shift=shift) @ tfb.Scale(-1.0) @ tfb.Softplus()
+                bijector=tfb.Chain([tfb.Shift(shift=shift), tfb.Scale(-1.0), tfb.Softplus()])
             )
         else:
-            # Unconstrained normal distribution
+            # Standard normal for unconstrained variables
             tf_dist = tfd.Normal(loc=float(mean), scale=float(uncertainty))
             
-        # Create latent variable
+        # Create the latent variable
         latent = ContinuousLatentVariable(
             name=name,
-            initial_value=mean,
-            uncertainty=uncertainty,
+            initial_value=float(mean),
+            uncertainty=float(uncertainty),
             description=description,
-            relationships=relationships,
+            relationships=relationships or {},
             tf_distribution=tf_dist  # Attach TF distribution
         )
         
@@ -574,6 +574,155 @@ class BayesianState:
         samples = joint_dist.sample(n_samples)
         
         return samples
+
+    def add_factor(self, name: str, factor_type: str, value: Any,
+                   params: Dict[str, Any], relationships: Dict[str, Any]) -> LatentVariable:
+        """
+        Add a factor to the state with proper hierarchical relationships.
+        
+        This is the main method for adding factors, ensuring proper hierarchical structure.
+        It delegates to the appropriate type-specific method based on factor_type.
+        
+        Args:
+            name: Name of the factor
+            factor_type: Type of factor ('continuous', 'categorical', 'discrete')
+            value: Initial value
+            params: Type-specific parameters
+            relationships: Hierarchical relationships with other factors
+            
+        Returns:
+            The created latent variable
+        """
+        # Validate relationships format
+        if relationships is None:
+            relationships = {}
+        elif not isinstance(relationships, dict):
+            raise ValueError("Relationships must be a dictionary")
+        
+        # Validate depends_on is a list if present
+        if 'depends_on' in relationships:
+            if not isinstance(relationships['depends_on'], list):
+                raise ValueError("depends_on must be a list of factor names")
+            if not all(isinstance(x, str) for x in relationships['depends_on']):
+                raise ValueError("All elements in depends_on must be strings")
+            
+        # Check if this is a root factor (no dependencies)
+        is_root = not relationships.get('depends_on')
+        
+        # Validate parent factors exist
+        if not is_root:
+            missing_parents = [parent for parent in relationships['depends_on'] 
+                             if parent not in self.factors]
+            if missing_parents:
+                raise ValueError(f"Cannot create factor '{name}' because parent factors do not exist: {missing_parents}")
+            
+        # Check for circular dependencies
+        if not is_root:
+            # Create a temporary graph with the new factor
+            temp_graph = self.hierarchical_relations.copy()
+            temp_graph[name] = relationships
+            
+            # Check for cycles using DFS
+            def has_cycle(graph: Dict[str, Dict[str, Any]], 
+                         node: str, 
+                         visited: Set[str], 
+                         path: Set[str]) -> bool:
+                visited.add(node)
+                path.add(node)
+                
+                if node in graph and 'depends_on' in graph[node]:
+                    for parent in graph[node]['depends_on']:
+                        if parent not in visited:
+                            if has_cycle(graph, parent, visited, path):
+                                return True
+                        elif parent in path:
+                            return True
+                        
+                path.remove(node)
+                return False
+                
+            # Check for cycles starting from the new factor
+            if has_cycle(temp_graph, name, set(), set()):
+                raise ValueError(f"Adding factor '{name}' would create a circular dependency")
+        
+        # Create factor based on type
+        if factor_type == "continuous":
+            factor = self.add_continuous_latent(
+                name=name,
+                mean=float(value),
+                uncertainty=float(params.get('scale', 0.1)),
+                description=f"Continuous factor {name}",
+                lower_bound=params.get('lower_bound'),
+                upper_bound=params.get('upper_bound'),
+                relationships=relationships
+            )
+        elif factor_type == "categorical":
+            if not params.get('categories') or not params.get('probs'):
+                raise ValueError("Categories and probabilities required for categorical factors")
+            
+            # Handle hierarchical relationships for categorical variables
+            if not is_root:
+                # If this categorical variable depends on other factors,
+                # we need to specify conditional probabilities for each combination
+                conditional_probs = relationships.get('conditional_probs', {})
+                if not conditional_probs:
+                    # If no conditional probabilities provided, use uniform distribution
+                    # This should be updated based on actual data or expert knowledge
+                    conditional_probs = {
+                        cat: {dep: 1.0/len(params['categories']) for dep in params['categories']}
+                        for cat in params['categories']
+                    }
+            else:
+                conditional_probs = None
+            
+            factor = self.add_categorical_latent(
+                name=name,
+                initial_value=str(value),
+                possible_values=params['categories'],
+                probs=params['probs'],
+                description=f"Categorical factor {name}",
+                relationships=relationships,
+                conditional_probs=conditional_probs
+            )
+        elif factor_type == "discrete":
+            if params.get('categories') and params.get('probs'):
+                # Finite discrete values
+                factor = self.add_discrete_latent(
+                    name=name,
+                    initial_value=int(value),
+                    min_value=min(params['categories']),
+                    max_value=max(params['categories']),
+                    description=f"Discrete factor {name}",
+                    relationships=relationships
+                )
+            else:
+                # Poisson distribution for counts
+                factor = self.add_discrete_latent(
+                    name=name,
+                    initial_value=int(value),
+                    rate=float(value),
+                    description=f"Count factor {name}",
+                    relationships=relationships
+                )
+        else:
+            raise ValueError(f"Unknown factor type: {factor_type}")
+        
+        # Add to state factors dictionary
+        self.factors[name] = {
+            "type": factor_type,
+            "value": value,
+            "params": params,
+            "relationships": relationships
+        }
+        
+        # Update hierarchical relations if not a root factor
+        if not is_root:
+            self.hierarchical_relations[name] = relationships
+        
+        # Update topological order
+        self._update_topological_order()
+        
+        return factor
 
 
 # For backward compatibility with any code that directly imports EnvironmentState

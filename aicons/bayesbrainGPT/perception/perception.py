@@ -158,7 +158,7 @@ class BayesianPerception:
                         # Use transformation to ensure lower bound
                         prior_dict[name] = tfd.TransformedDistribution(
                             distribution=tfd.Normal(loc=loc-lower, scale=scale),
-                            bijector=tfb.Shift(shift=lower) @ tfb.Softplus()
+                            bijector=tfb.Chain([tfb.Shift(shift=lower), tfb.Softplus()])
                         )
                     elif "upper" in constraints:
                         # Upper bounded
@@ -166,7 +166,7 @@ class BayesianPerception:
                         # Use transformation to ensure upper bound
                         prior_dict[name] = tfd.TransformedDistribution(
                             distribution=tfd.Normal(loc=upper-loc, scale=scale),
-                            bijector=tfb.Shift(shift=upper) @ tfb.Scale(-1.0) @ tfb.Softplus()
+                            bijector=tfb.Chain([tfb.Shift(shift=upper), tfb.Scale(-1.0), tfb.Softplus()])
                         )
                 else:
                     # Unconstrained normal

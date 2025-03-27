@@ -90,48 +90,89 @@ class BayesBrain:
         """
         self.aicon = aicon
     
-    def compute_posteriors(self) -> Dict[str, Any]:
+    def get_state_factors(self) -> Dict[str, Any]:
         """
-        Compute posterior distributions for all state factors.
+        Get all state factors from the brain's state.
         
         Returns:
-            Dictionary mapping state factors to their posterior distributions
+            Dictionary of state factors
         """
-        if self.perception is None:
-            return self.state.get_beliefs()
-            
-        return self.perception.get_posterior_samples()
+        return self.state.get_factors()
     
-    def compute_action_utilities(self, posteriors: Dict[str, Any], num_samples: Optional[int] = None) -> Dict[Dict[str, Any], float]:
+    def get_state(self) -> Dict[str, Any]:
         """
-        Compute expected utility for all possible actions given posteriors.
+        Get the current state beliefs.
+        
+        Returns:
+            Dictionary of current state beliefs
+        """
+        return self.state.get_state()
+    
+    def get_posterior_samples(self) -> Dict[str, Any]:
+        """
+        Get samples from the posterior distribution.
+        
+        Returns:
+            Dictionary of posterior samples
+        """
+        return self.state.sample_from_posterior()
+    
+    def find_best_action(self, num_samples: Optional[int] = None) -> Tuple[Optional[Dict[str, Any]], float]:
+        """
+        Find the best action based on current beliefs.
         
         Args:
-            posteriors: Dictionary of posterior distributions
-            num_samples: Number of samples to use for Monte Carlo methods
+            num_samples: Number of actions to sample (for Monte Carlo methods)
+            
+        Returns:
+            Tuple of (best_action, expected_utility)
+        """
+        if not self.action_space or not self.utility_function:
+            raise ValueError("Action space and utility function must be set before finding best action")
+            
+        # Get current state
+        current_state = self.get_state()
+        
+        # Sample actions
+        if num_samples is None:
+            num_samples = self.decision_params["num_samples"]
+            
+        # Get action utilities
+        action_utilities = self.compute_action_utilities(current_state, num_samples)
+        
+        # Select best action
+        return self.select_best_action(action_utilities)
+    
+    def compute_action_utilities(self, state: Dict[str, Any], num_samples: int) -> Dict[Dict[str, Any], float]:
+        """
+        Compute expected utilities for all possible actions.
+        
+        Args:
+            state: Current state
+            num_samples: Number of samples to use
             
         Returns:
             Dictionary mapping actions to their expected utilities
         """
-        if self.action_space is None or self.utility_function is None:
-            return {}
-            
-        if num_samples is None:
-            num_samples = self.decision_params["num_samples"]
-            
         action_utilities = {}
         
-        # Sample actions and compute utilities
-        for _ in range(num_samples):
-            action = self.action_space.sample()
+        # Sample actions from the action space
+        actions = self.action_space.sample_actions(num_samples)
+        
+        # Compute utility for each action
+        for action in actions:
+            # Sample from posterior given action
+            posterior_samples = self.state.sample_from_posterior(num_samples)
             
-            # Calculate expected utility
-            if posteriors:
-                utility = self.utility_function.expected_utility(action, posteriors)
-            else:
-                utility = self.utility_function.evaluate(action, self.state.get_beliefs())
+            # Compute utility for each sample
+            utilities = []
+            for sample in posterior_samples:
+                utility = self.utility_function(action, sample)
+                utilities.append(utility)
                 
-            action_utilities[action] = utility
+            # Average utility across samples
+            expected_utility = np.mean(utilities)
+            action_utilities[action] = expected_utility
             
         return action_utilities
     
@@ -267,10 +308,6 @@ class BayesBrain:
         """
         self.decision_params.update(params)
     
-    def get_state(self) -> Dict[str, Any]:
-        """Get the current state beliefs."""
-        return self.state.get_beliefs()
-    
     def get_action_space(self) -> Optional[ActionSpace]:
         """Get the current action space."""
         return self.action_space
@@ -278,12 +315,6 @@ class BayesBrain:
     def get_utility_function(self) -> Optional[Any]:
         """Get the current utility function."""
         return self.utility_function
-    
-    def get_posterior_samples(self) -> Dict[str, Any]:
-        """Get samples from the posterior distribution."""
-        if self.perception is not None:
-            return self.perception.get_posterior_samples()
-        return {}
     
     def get_decision_history(self) -> List[Tuple[Dict[str, Any], float, float]]:
         """

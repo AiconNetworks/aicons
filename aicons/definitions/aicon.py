@@ -13,6 +13,7 @@ The AIcon class handles:
 from typing import Dict, Any, Optional, List, Tuple, Union
 import numpy as np
 from abc import ABC, abstractmethod
+import tensorflow_probability as tfp
 
 # Import BayesBrain and its components
 from ..bayesbrainGPT.bayes_brain_ref import BayesBrain
@@ -25,6 +26,13 @@ from ..bayesbrainGPT.decision_making.action_space import (
     create_marketing_ads_space
 )
 from ..bayesbrainGPT.utility_function import create_utility
+from ..bayesbrainGPT.state_representation.latent_variables import (
+    LatentVariable,
+    ContinuousLatentVariable,
+    CategoricalLatentVariable,
+    DiscreteLatentVariable
+)
+from ..bayesbrainGPT.state_representation import BayesianState
 
 # Import tools
 from ..tools.ask_question import AskQuestionTool
@@ -62,10 +70,6 @@ class AIcon(ABC):
             description=f"Bayesian brain for {name}"
         )
         self.brain.set_aicon(self)  # Set reference to this AIcon
-        
-        # State management
-        self.state_factors = {}
-        self.sensors = {}
         
         # Tool management
         self.tools = {}
@@ -122,34 +126,132 @@ class AIcon(ABC):
         Returns:
             True if the decision was executed successfully
         """
-        try:
-            # Get the action type and parameters
-            action_type = action.get('type', 'unknown')
-            action_params = action.get('params', {})
+        # Implementation in subclasses
+        pass
+    
+    def add_state_factor(self, name: str, factor_type: str, value: Any,
+                        uncertainty: Optional[float] = None,
+                        categories: Optional[List[str]] = None,
+                        probs: Optional[List[float]] = None,
+                        constraints: Optional[Dict[str, float]] = None,
+                        relationships: Optional[Dict[str, Any]] = None) -> LatentVariable:
+        """
+        Add a state factor through the brain.
+        
+        This method delegates to the brain's state management to ensure proper
+        hierarchical relationships and consistency.
+        
+        Args:
+            name: Name of the factor
+            factor_type: Type of factor ('continuous', 'categorical', 'discrete')
+            value: Initial value
+            uncertainty: Uncertainty for continuous factors
+            categories: Possible values for categorical factors
+            probs: Probabilities for categorical factors
+            constraints: Constraints for discrete factors
+            relationships: Hierarchical relationships with other factors
             
-            # Execute the appropriate tool based on action type
-            if action_type == 'ask_question':
-                tool = self.get_tool('ask_question')
-                if tool:
-                    return tool.execute(
-                        question=action_params.get('question', ''),
-                        context=action_params.get('context')
-                    )
-                    
-            elif action_type == 'speak':
-                tool = self.get_tool('speak_out_loud')
-                if tool:
-                    return tool.execute(
-                        statement=action_params.get('statement', ''),
-                        context=action_params.get('context')
-                    )
+        Returns:
+            The created latent variable
+        """
+        # Validate relationships
+        if relationships is None:
+            relationships = {}
             
-            print(f"Unknown action type: {action_type}")
-            return False
+        # Create factor data
+        factor_data = {
+            "name": name,
+            "type": factor_type,
+            "value": value,
+            "relationships": relationships
+        }
+        
+        # Add type-specific parameters
+        if factor_type == "continuous":
+            factor_data["params"] = {
+                "scale": uncertainty or 1.0
+            }
+        elif factor_type == "categorical":
+            factor_data["params"] = {
+                "categories": categories or [],
+                "probs": probs or []
+            }
+        elif factor_type == "discrete":
+            factor_data["params"] = {
+                "constraints": constraints or {}
+            }
             
-        except Exception as e:
-            print(f"Error making decision: {e}")
-            return False
+        # Delegate to brain's state
+        return self.brain.state.add_factor(**factor_data)
+    
+    def get_state_factors(self) -> Dict[str, Any]:
+        """
+        Get state factors from the brain.
+        
+        Returns:
+            Dictionary of state factors
+        """
+        return self.brain.get_state_factors()
+    
+    def add_sensor(self, name: str, sensor: Any, factor_mapping: Optional[Dict[str, str]] = None) -> Any:
+        """
+        Add a sensor to this AIcon.
+        
+        Args:
+            name: Name of the sensor
+            sensor: The sensor object or function
+            factor_mapping: Optional mapping between sensor outputs and state factors
+            
+        Returns:
+            The sensor for convenience
+        """
+        self.brain.add_sensor(name, sensor, factor_mapping)
+        return sensor
+    
+    def update_from_sensor(self, sensor_name: str, environment: Any = None) -> bool:
+        """
+        Update beliefs based on data from a specific sensor.
+        
+        Args:
+            sensor_name: Name of the sensor to use
+            environment: Optional environment data to pass to the sensor
+            
+        Returns:
+            True if update was successful
+        """
+        return self.brain.update_from_sensor(sensor_name, environment)
+    
+    def update_from_all_sensors(self, environment: Any = None) -> bool:
+        """
+        Update beliefs based on data from all sensors.
+        
+        Args:
+            environment: Optional environment data to pass to sensors
+            
+        Returns:
+            True if update was successful
+        """
+        return self.brain.update_from_all_sensors(environment)
+    
+    def find_best_action(self, num_samples: Optional[int] = None) -> Tuple[Optional[Dict[str, Any]], float]:
+        """
+        Find the best action based on current beliefs.
+        
+        Args:
+            num_samples: Number of actions to sample (for Monte Carlo methods)
+            
+        Returns:
+            Tuple of (best_action, expected_utility)
+        """
+        return self.brain.find_best_action(num_samples)
+    
+    def get_state(self) -> Dict[str, Any]:
+        """Get the current state beliefs."""
+        return self.brain.get_state()
+    
+    def get_posterior_samples(self) -> Dict[str, Any]:
+        """Get samples from the posterior distribution."""
+        return self.brain.get_posterior_samples()
     
     def define_action_space(self, space_type: str, **kwargs) -> ActionSpace:
         """
@@ -327,184 +429,4 @@ class AIcon(ABC):
             
         except Exception as e:
             print(f"Error creating utility function: {e}")
-            return None
-    
-    def add_state_factor(self, name: str, factor_type: str, **kwargs) -> Dict[str, Any]:
-        """
-        Add a state factor to this AIcon.
-        
-        Args:
-            name: Name of the factor
-            factor_type: Type of factor ('continuous', 'categorical', or 'discrete')
-            **kwargs: Additional parameters for the factor
-            
-        Returns:
-            The created factor dictionary
-        """
-        try:
-            factor = None
-            
-            if factor_type == 'continuous':
-                value = kwargs.get('value', 0.0)
-                uncertainty = kwargs.get('uncertainty', 0.1)
-                lower_bound = kwargs.get('lower_bound')
-                upper_bound = kwargs.get('upper_bound')
-                
-                factor = {
-                    "type": "continuous",
-                    "value": value,
-                    "params": {"scale": uncertainty},
-                    "constraints": {}
-                }
-                
-                if lower_bound is not None:
-                    factor["constraints"]["lower"] = lower_bound
-                if upper_bound is not None:
-                    factor["constraints"]["upper"] = upper_bound
-                    
-            elif factor_type == 'categorical':
-                value = kwargs.get('value')
-                categories = kwargs.get('categories', [])
-                probs = kwargs.get('probs', None)
-                
-                if not value or not categories:
-                    raise ValueError("Categorical factor requires value and categories")
-                    
-                if value not in categories:
-                    raise ValueError(f"Value '{value}' not in categories: {categories}")
-                    
-                if probs is None:
-                    # Equal probability for all categories
-                    probs = [1.0 / len(categories)] * len(categories)
-                    
-                factor = {
-                    "type": "categorical",
-                    "value": value,
-                    "categories": categories,
-                    "params": {"probs": probs}
-                }
-                
-            elif factor_type == 'discrete':
-                value = kwargs.get('value', 0)
-                min_value = kwargs.get('min_value', 0)
-                max_value = kwargs.get('max_value')
-                
-                factor = {
-                    "type": "discrete",
-                    "value": value,
-                    "constraints": {"lower": min_value}
-                }
-                
-                if max_value is not None:
-                    factor["constraints"]["upper"] = max_value
-                    
-            else:
-                raise ValueError(f"Unknown factor type: {factor_type}")
-            
-            # Add description if provided
-            if 'description' in kwargs:
-                factor["description"] = kwargs['description']
-            
-            # Store the factor
-            self.state_factors[name] = factor
-            
-            # Update the brain's state
-            self.brain.set_state_factors(self.state_factors)
-            
-            return factor
-            
-        except Exception as e:
-            print(f"Error adding state factor: {e}")
-            return None
-    
-    def add_sensor(self, name: str, sensor: Any, factor_mapping: Optional[Dict[str, str]] = None) -> Any:
-        """
-        Add a sensor to this AIcon.
-        
-        Args:
-            name: Name of the sensor
-            sensor: The sensor object or function
-            factor_mapping: Optional mapping between sensor outputs and state factors
-            
-        Returns:
-            The sensor for convenience
-        """
-        self.sensors[name] = {
-            "sensor": sensor,
-            "factor_mapping": factor_mapping or {}
-        }
-        return sensor
-    
-    def update_from_sensor(self, sensor_name: str, environment: Any = None) -> bool:
-        """
-        Update beliefs based on data from a specific sensor.
-        
-        Args:
-            sensor_name: Name of the sensor to use
-            environment: Optional environment data to pass to the sensor
-            
-        Returns:
-            True if update was successful
-        """
-        if sensor_name not in self.sensors:
-            print(f"Unknown sensor: {sensor_name}")
-            return False
-            
-        try:
-            # Get sensor data
-            sensor = self.sensors[sensor_name]["sensor"]
-            factor_mapping = self.sensors[sensor_name]["factor_mapping"]
-            
-            # Get sensor data
-            sensor_data = sensor(environment) if callable(sensor) else sensor.get_data(environment)
-            
-            # Map sensor data to state factors
-            mapped_data = {}
-            for factor_name, (value, reliability) in sensor_data.items():
-                # Use mapping if available, otherwise use original name
-                mapped_name = factor_mapping.get(factor_name, factor_name)
-                mapped_data[mapped_name] = (value, reliability)
-            
-            # Update beliefs in the brain
-            self.brain.update_beliefs(mapped_data)
-            return True
-            
-        except Exception as e:
-            print(f"Error updating from sensor: {e}")
-            return False
-    
-    def update_from_all_sensors(self, environment: Any = None) -> bool:
-        """
-        Update beliefs based on data from all sensors.
-        
-        Args:
-            environment: Optional environment data to pass to sensors
-            
-        Returns:
-            True if update was successful
-        """
-        success = True
-        for sensor_name in self.sensors:
-            if not self.update_from_sensor(sensor_name, environment):
-                success = False
-        return success
-    
-    def find_best_action(self, num_samples: Optional[int] = None) -> Tuple[Optional[Dict[str, Any]], float]:
-        """
-        Find the best action based on current beliefs.
-        
-        Args:
-            num_samples: Number of actions to sample (for Monte Carlo methods)
-            
-        Returns:
-            Tuple of (best_action, expected_utility)
-        """
-        return self.brain.find_best_action(num_samples)
-    
-    def get_state(self) -> Dict[str, Any]:
-        """Get the current state beliefs."""
-        return self.brain.get_state()
-    
-    def get_posterior_samples(self) -> Dict[str, Any]:
-        """Get samples from the posterior distribution."""
-        return self.brain.get_posterior_samples() 
+            return None 
