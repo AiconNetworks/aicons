@@ -16,9 +16,15 @@ And providing:
 - Updated beliefs with uncertainty
 - Optimal actions with expected utility
 - Posterior distributions
+
+Note on State Factor Management:
+- AIcon.add_state_factor() is the primary public API for adding factors
+- It delegates to brain.state.add_factor() for single factor addition
+- This set_state_factors() method is a bulk version for internal use
+- Always use add_state_factor() from AIcon for proper relationship handling
 """
 
-from typing import Dict, Any, Optional, Tuple, List, Union
+from typing import Dict, Any, Optional, Tuple, List, Union, Callable
 import numpy as np
 import uuid
 from abc import ABC, abstractmethod
@@ -252,6 +258,9 @@ class BayesBrain:
         """
         Set state factors from AIcon.
         
+        Note: This is an internal method used by AIcon.add_state_factor().
+        For adding state factors, always use AIcon.add_state_factor() instead.
+        
         Args:
             factors: Dictionary of state factors with their properties:
                 {
@@ -321,6 +330,67 @@ class BayesBrain:
         if self.last_action is None:
             return []
         return [(self.last_action, self.last_utility, self.last_decision_time)]
+    
+    def add_sensor(self, name: str, sensor: Any, factor_mapping: Optional[Dict[str, str]] = None) -> None:
+        """
+        Add a sensor to the brain's perception system.
+        
+        Args:
+            name: Name of the sensor
+            sensor: The sensor object or function
+            factor_mapping: Optional mapping between sensor outputs and state factors
+        """
+        if self.perception is None:
+            self.initialize_perception()
+        self.perception.register_sensor(name, sensor, factor_mapping)
+    
+    def get_sensors(self) -> List[Callable]:
+        """Get the current list of sensors"""
+        return getattr(self, 'sensors', [])
+    
+    def collect_sensor_data(self, environment: Any) -> Dict[str, Any]:
+        """
+        Collect data from all sensors
+        
+        Args:
+            environment: The environment to collect data from
+            
+        Returns:
+            Dictionary of sensor data
+        """
+        sensor_data = {}
+        for sensor in self.get_sensors():
+            sensor_data.update(sensor(environment))
+        return sensor_data
+    
+    def update_from_sensor(self, sensor_name: str, environment: Any = None) -> bool:
+        """
+        Update beliefs based on data from a specific sensor.
+        
+        Args:
+            sensor_name: Name of the sensor to use
+            environment: Optional environment data
+            
+        Returns:
+            True if update was successful
+        """
+        if self.perception is None:
+            self.initialize_perception()
+        return self.perception.update_from_sensor(sensor_name, environment)
+    
+    def update_from_all_sensors(self, environment: Any = None) -> bool:
+        """
+        Update beliefs based on data from all sensors.
+        
+        Args:
+            environment: Optional environment data
+            
+        Returns:
+            True if update was successful
+        """
+        if self.perception is None:
+            self.initialize_perception()
+        return self.perception.update_all(environment)
 
 # Example usage
 if __name__ == "__main__":

@@ -73,3 +73,61 @@ The state can be updated whenever a significant change in sensor data is detecte
 
 Feedback After Action:
 After the agent publishes an ad and collects outcomes (like performance metrics), that feedback is used to update the state further. This continuous learning loop adjusts the priors over time.
+
+### Action Triggering
+
+The system supports two main ways to trigger action making:
+
+1. **Manual Triggering (AIcon)**
+
+   - Direct call to action making from AIcon
+   - Useful for scheduled or on-demand decisions
+   - Example: Daily budget allocation at specific times
+
+2. **Sensor-Based Triggering**
+   - Automatic triggering based on sensor data fluctuations
+   - Can be selective (not all sensors trigger actions)
+   - Example: Sudden drop in conversion rate triggering budget reallocation
+
+Example of manual triggering:
+
+```python
+# In AIcon
+def make_decision(self):
+    """
+    Manually trigger action making.
+    """
+    # Get current state
+    current_state = self.get_state()
+
+    # Calculate expected utilities
+    expected_utilities = self.calculate_expected_utilities()
+
+    # Choose best action
+    best_action = self.select_best_action(expected_utilities)
+
+    return best_action
+
+# Usage
+action = aicon.make_decision()
+```
+
+Example of sensor-based triggering:
+
+```python
+# In AIcon
+def on_sensor_update(self, sensor_name, data):
+    """
+    Handle sensor updates and potentially trigger actions.
+    """
+    # Update perception with new sensor data
+    self.perception.update_from_sensor(sensor_name, data)
+
+    # Check if this sensor should trigger action
+    if self.should_trigger_action(sensor_name, data):
+        return self.make_decision()
+
+    return None
+```
+
+The system allows for flexible configuration of which sensors trigger actions and under what conditions, while maintaining the ability to manually trigger decisions when needed.
