@@ -2,6 +2,61 @@
 
 ## State Representation
 
+### Factor Structure
+
+The state representation now uses a unified factor structure with explicit relationships:
+
+1. **Factor Types**:
+
+   - `ContinuousLatentVariable`: For continuous values with constraints and uncertainty
+   - `CategoricalLatentVariable`: For categorical values with prior probabilities
+   - `DiscreteLatentVariable`: For discrete values with either categorical or Poisson distributions
+
+2. **Factor Relationships**:
+
+   - Each factor has an explicit `relationships` dictionary with `depends_on` list
+   - Root factors have empty `depends_on` list
+   - Dependent factors list their parent factors in `depends_on`
+
+3. **Distribution Parameters**:
+   - Continuous: `loc`, `scale`, and `constraints` (e.g., lower/upper bounds)
+   - Categorical: `categories` and `probs` for prior probabilities
+   - Discrete: either `categories`/`probs` or `rate` for Poisson
+
+Example:
+
+```python
+# Root factor (continuous)
+add_state_factor(
+    name="market_size",
+    factor_type="continuous",
+    value=10000.0,
+    params={
+        "loc": 10000.0,
+        "scale": 1000.0,
+        "constraints": {"lower": 0}
+    },
+    relationships={
+        "depends_on": []  # Empty list for root factor
+    }
+)
+
+# Dependent factor (continuous)
+add_state_factor(
+    name="conversion_rate",
+    factor_type="continuous",
+    value=0.02,
+    params={
+        "loc": 0.02,
+        "scale": 0.005,
+        "constraints": {"lower": 0, "upper": 1}
+    },
+    relationships={
+        "depends_on": ["market_size", "competition_level"]
+    }
+)
+```
+
 ### LLM Integration
 
 Gemini for factor extraction. We are getting all the values from gemini LLM.

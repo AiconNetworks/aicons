@@ -2,6 +2,50 @@
 
 ## Core Concepts
 
+### State Representation
+
+The AIcons framework uses a Bayesian brain-inspired state representation that consists of:
+
+1. **Factor Types**:
+
+   - `ContinuousLatentVariable`: For continuous values (e.g., market_size, conversion_rate)
+   - `CategoricalLatentVariable`: For categorical values (e.g., competition_level)
+   - `DiscreteLatentVariable`: For discrete values (e.g., num_competitors)
+
+2. **Factor Relationships**:
+
+   - Root factors: Independent factors with no dependencies
+   - Dependent factors: Factors that depend on other factors
+   - Hierarchical structure: Parent-child relationships between factors
+
+3. **Distribution Parameters**:
+   - Continuous: location, scale, and constraints
+   - Categorical: categories and probabilities
+   - Discrete: either categories/probs or Poisson rate
+
+Example State:
+
+```
+State Representation:
+market_size: 10000.00 (constraints: {'lower': 0}) (uncertainty: 1000.00)
+competition_level: medium (probs: {'low': 0.2, 'medium': 0.5, 'high': 0.3})
+conversion_rate: 0.02 (constraints: {'lower': 0, 'upper': 1}) (uncertainty: 0.01)
+customer_acquisition_cost: 50.00 (constraints: {'lower': 0}) (uncertainty: 10.00)
+num_competitors: 5 (Poisson rate: 5.0)
+
+Factor Relationships:
+market_size:
+  Root factor (no dependencies)
+competition_level:
+  Root factor (no dependencies)
+conversion_rate:
+  Depends on: ['market_size', 'competition_level']
+customer_acquisition_cost:
+  Depends on: ['competition_level']
+num_competitors:
+  Root factor (no dependencies)
+```
+
 ### Tools
 
 A tool in the AIcons framework is an external piece of software that helps the AIcon to change the environment somewhere else. Tools are specific implementations that interact with external services or systems. They are the concrete actions that an AIcon can take to affect change in the world.
