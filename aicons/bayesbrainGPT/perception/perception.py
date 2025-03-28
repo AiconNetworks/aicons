@@ -7,6 +7,9 @@ from typing import Dict, List, Optional, Any
 tfd = tfp.distributions
 tfb = tfp.bijectors
 
+# Import the base Sensor class
+from ..sensors import Sensor
+
 class BayesianPerception:
     """
     Handles Bayesian inference for perception based on sensor data and prior beliefs
@@ -34,11 +37,9 @@ class BayesianPerception:
             factor_mapping: Optional dictionary mapping sensor factor names to state factor names
                             For example: {"base_conversion_rate": "conversion_rate"}
         """
-        # Check if this is a TFSensor object or a function
-        from ..sensors.tf_sensors import TFSensor
-        
-        if isinstance(sensor, TFSensor):
-            # Store TFSensor object
+        # Check if this is a Sensor object or a function
+        if isinstance(sensor, Sensor):
+            # Store Sensor object
             self.sensors[name] = sensor
             
             # Add factor mapping for this sensor
@@ -89,11 +90,9 @@ class BayesianPerception:
         observations = {}
         
         for name, sensor in self.sensors.items():
-            # Check if this is a TFSensor object or a function
-            from ..sensors.tf_sensors import TFSensor
-            
-            if isinstance(sensor, TFSensor):
-                # Use TFSensor's get_data method
+            # Check if this is a Sensor object or a function
+            if isinstance(sensor, Sensor):
+                # Use Sensor's get_data method
                 data = sensor.get_data(environment)
             else:
                 # Backward compatibility for sensor functions
@@ -829,11 +828,9 @@ class BayesianPerception:
         # Get sensor data
         sensor = self.sensors[sensor_name]
         
-        # Check if this is a TFSensor object or a function
-        from ..sensors.tf_sensors import TFSensor
-        
-        if isinstance(sensor, TFSensor):
-            # Use TFSensor's get_data method
+        # Check if this is a Sensor object or a function
+        if isinstance(sensor, Sensor):
+            # Use Sensor's get_data method
             sensor_data = sensor.get_data(environment)
         else:
             # Backward compatibility for sensor functions

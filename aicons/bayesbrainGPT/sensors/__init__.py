@@ -1,1 +1,1 @@
-from .tf_sensors import TFSensor, MarketingSensor, WeatherSensor 
+from .sensors import Sensor, MarketingSensor, WeatherSensor 

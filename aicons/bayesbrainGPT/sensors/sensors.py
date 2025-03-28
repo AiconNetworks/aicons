@@ -13,7 +13,7 @@ from typing import Dict, Any, List, Tuple, Optional, Union
 TensorType = Union[tf.Tensor, np.ndarray, float, int, str]
 ObservationType = Tuple[TensorType, float]  # (value, reliability)
 
-class TFSensor(ABC):
+class Sensor(ABC):
     """
     Base class for TensorFlow-compatible sensors.
     
@@ -172,7 +172,7 @@ class TFSensor(ABC):
         return mapped_data
 
 
-class MarketingSensor(TFSensor):
+class MarketingSensor(Sensor):
     """
     Sensor for marketing campaign data.
     
@@ -303,7 +303,7 @@ class MarketingSensor(TFSensor):
         return observations
 
 
-class WeatherSensor(TFSensor):
+class WeatherSensor(Sensor):
     """
     Sensor for weather data.
     

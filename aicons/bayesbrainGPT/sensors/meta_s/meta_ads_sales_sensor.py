@@ -20,10 +20,10 @@ from facebook_business.adobjects.campaign import Campaign
 from facebook_business.adobjects.adset import AdSet
 from facebook_business.adobjects.ad import Ad
 
-# Import the base TFSensor class
-from ..tf_sensors import TFSensor, TensorType, ObservationType
+# Import the base Sensor class
+from ..sensors import Sensor, TensorType, ObservationType
 
-class MetaAdsSalesSensor(TFSensor):
+class MetaAdsSalesSensor(Sensor):
     """
     Sensor for Meta (Facebook) ad campaign sales data.
     
