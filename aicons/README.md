@@ -56,36 +56,6 @@ Examples of tools:
 - Twitter Post Tool (posts tweets using Twitter API)
 - Email Sending Tool (sends emails using SMTP)
 
-### Limbs
-
-A limb is a piece of software that enables the usage of different tools. Limbs are like abstract interfaces or connectors that provide the capability to use various tools. They represent the general ability to interact with a type of service.
-
-Examples of limbs:
-
-- API Client Limb (enables making API calls to various services)
-- Database Connection Limb (enables interaction with different databases)
-- File System Limb (enables file operations)
-
-## Architecture
-
-The relationship between limbs and tools can be understood as follows:
-
-```
-Limb (Abstract Capability)
-  └── Tool 1 (Specific Implementation)
-  └── Tool 2 (Specific Implementation)
-  └── Tool 3 (Specific Implementation)
-```
-
-For example:
-
-```
-API Client Limb
-  └── Meta Ads Creation Tool
-  └── Twitter Post Tool
-  └── Weather API Tool
-```
-
 ## BaseAIcon
 
 The BaseAIcon class serves as the foundation for all agent implementations in the AIcons framework. It provides core functionality that all specialized agents can build upon.
@@ -110,13 +80,17 @@ The BaseAIcon class serves as the foundation for all agent implementations in th
 
 #### State Factor Management
 
-- `add_factor_continuous(name, value, uncertainty=0.1, lower_bound=None, upper_bound=None, description="")`: Add a continuous factor (e.g., temperature, price)
-- `add_factor_categorical(name, value, categories, probs=None, description="")`: Add a categorical factor (e.g., weather type, product category)
-- `add_factor_discrete(name, value, min_value=0, max_value=None, description="")`: Add a discrete integer factor (e.g., count, rating)
+- `add_state_factor(name, factor_type, value, params, relationships=None)`: Unified method for adding any type of state factor
+  - `factor_type`: 'continuous', 'categorical', or 'discrete'
+  - `params`: Type-specific parameters:
+    - For continuous: {'loc': float, 'scale': float, 'constraints': {'lower': float, 'upper': float}}
+    - For categorical: {'categories': List[str], 'probs': List[float]}
+    - For discrete: {'categories': List[int], 'probs': List[float]} or {'rate': float}
+  - `relationships`: Optional hierarchical relationships with other factors
 - `define_factor_dependency(name, parent_factors, relation_type="linear", parameters=None, uncertainty=1.0, description="")`: Define a factor that depends on other factors through a specific relationship
 - `compile_probabilistic_model()`: Compile all factors and their relationships into a coherent joint distribution for inference
 
-> **Note on Hierarchical Modeling**: The AIcons system is inherently hierarchical based on the Bayesian brain hypothesis. The entire state representation is a hierarchical probabilistic model where factors can depend on each other. `define_factor_dependency` defines these dependencies, and `compile_probabilistic_model` compiles them into a mathematical structure for inference.
+> **Note on State Factor Management**: The AIcons system uses a unified `add_state_factor` method for adding all types of factors. This provides a consistent interface while maintaining the flexibility to handle different factor types through their specific parameters. The method automatically handles the creation of appropriate latent variables based on the factor type and parameters provided.
 
 - `sample_from_prior(n_samples=1)`: Sample from the prior distribution of the hierarchical model
 - `get_state(format_nicely=False)`: Get the current state factors and their values
@@ -180,20 +154,27 @@ marketing_agent = BaseAIcon(
 )
 
 # Add state factors for marketing context
-marketing_agent.add_factor_continuous(
+marketing_agent.add_state_factor(
     name="base_conversion_rate",
+    factor_type="continuous",
     value=0.05,
-    uncertainty=0.01,
-    lower_bound=0.0,
-    upper_bound=1.0,
-    description="Base conversion rate for ads"
+    params={
+        "loc": 0.05,
+        "scale": 0.01,
+        "constraints": {"lower": 0.0, "upper": 1.0}
+    },
+    relationships={"depends_on": []}
 )
 
-marketing_agent.add_factor_categorical(
+marketing_agent.add_state_factor(
     name="season",
+    factor_type="categorical",
     value="summer",
-    categories=["spring", "summer", "fall", "winter"],
-    description="Current season affecting purchasing behavior"
+    params={
+        "categories": ["spring", "summer", "fall", "winter"],
+        "probs": [0.25, 0.25, 0.25, 0.25]
+    },
+    relationships={"depends_on": []}
 )
 
 # Add a hierarchical factor
