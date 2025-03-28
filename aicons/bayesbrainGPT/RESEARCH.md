@@ -1,11 +1,11 @@
 Not so naive, gpt-enhanced bayes. Unifying Large Language Models and Bayesian Brain hypothesis.
 Generative bayesian inference process using LLMs as experience in prior construction for statistically self-controlled decision making.
 
-This is an attempt to create a Bayesian brain. We base our theory on the usage of system 1 and system 2 proposed by Daniel Khaneman and Amos Tverski assuming a similar approach taken by the brain through the aPFC and prefrontal cortex talked about in the book “a brief history of intelligence”. In order for LLMs to have the system two approach we take an approach similar to what we see in bayesian brain hypothesis. Where the brain interpret the world in a way that resembles bayesian inference. In essence it proposes that brain combines prior beliefs (or expectations) with incoming sensory data to form a probabliistc estimate of the world.
+This is an attempt to create a Bayesian brain. We base our theory on the usage of system 1 and system 2 proposed by Daniel Khaneman and Amos Tverski assuming a similar approach taken by the brain through the aPFC and prefrontal cortex talked about in the book “a brief history of intelligence”. In order for LLMs to have the system two approach we take an approach similar to what we see in bayesian brain hypothesis. Where the brain interpret the world in a way that resembles bayesian inference. In essence it proposes that brain combines prior beliefs (or expectations) with incoming sensory data to form a probabilistic estimate of the world.
 
-The brain is not a yes/no basis. It rpresresnts information in terms of probabilities which allows for flexible interpretation when information is noisy or ambiguous.
+The brain is not a yes/no basis. It represents information in terms of probabilities which allows for flexible interpretation when information is noisy or ambiguous.
 
-At the heart of the hypothesis is Bayes theorm. When new sensory informaint is received, the brain update its internal model by weightin the new data (likelihood) against prior beliefs to form a revised belief (posterior).
+At the heart of the hypothesis is Bayes theorm. When new sensory information is received, the brain update its internal model by weighting the new data (likelihood) against prior beliefs to form a revised belief (posterior).
 
 Posterior = Likelihood x prior
 
@@ -111,6 +111,21 @@ We handle covariance and interrelations of factors by using precision precision 
 
 The brain might encode this uncertainty using population codes, where neural activity patterns reflect variance (uncertainty about a single variable) and covariance (how two variables relate). Since we are using llms as proxy of experience data storage similar to what the brain does, we are going to assume this encoding as well for now.
 State representation
+Brain develops priors over time based on past experiences and learned regularities about the world. These priors act as a framework for interpreting new sensory input. Large language models have many priors embedded in their language. In order for LLMs to autocomplete the following words, they will do so by probabilistically choosing the best token until it reaches a stop. Language gotten from the internet has priors embedded in it. When we say, or type something we do it based on our assumptions. Having the experience of the whole internet, we could benefit from these priors or factors for decision making. Then these pre=existing expectations are used by the brain to make sense of the incoming sensory data.
+
+Pros: The good thing about using a language model is that there is practically nothing the large language model doesn’t know. Like it can make decisions for almost everything. This is because it has all our knowledge.
+
+Cons: They are overly general. Since they are probabilistic and just use argmax of the best token, they don't take into account all the other possibilities that could be. LLMs on their own do not have the possibility to “think” of other outcomes. We handle this currently by telling the llm to think in steps, or think before answering (Chain of thought).
+
+Here we propose a different “thinking” methodology. This is by thinking hierarchically.
+
+We have first the theory of how this works and later how we integrate it in the aicon system.
+
+Theory:
+
+Integration:
+The integration is a little bit more complicated. This is due to how large language models operate. We cannot just tell the large language model to create priors and distributions based on the task in hand. Rather we need to let the LLM to continue generating tokens normally, maybe using a chain of thought approach. Then we have to extract the priors and values from the generation. This because depedning on the prompt, the mllm will take those works form us and bias the system towards conitnuinng from that prompt. I.E. if we give the prompt “based on this text {text} give me the priors and distributions of those priors” Instead of the model being biased towards a embedding space related to what the text is about, it is going to be biased towards what priors are about. The problem is that in the internet the priors information would be more statistical which could bias the system to use values that are related to infromartion closer to statistics rather than based on the text. This is also an assumption. More research has to be done in how the embedding of a word changes during the lifespan of the window context self-attention mechanism.
+
 In the bayesian brain hypothesis, the brain is thought to have higher cortical areas which encode abstract, high-level expectations like “its stormy”,; it has lower cortical areas which process sensory details, like local rain intensity. And it has feedback looks that carry precitns form higher levels to lower levels and send back errors signals when prec iotns dont match sensory input.
 
 In our system, state representation is also the place where the system makes assumptions of data. These are latent variables.
@@ -356,9 +371,48 @@ We can assume that all information is soteed somehow in neural nets where we use
 Forming the likelihood here might be creating the likelihood of the real data we have.
 For example in the ads scenario, the real data its what we are trying to predict.
 
+During perception, in state updating with posterors, we can have some metrics that will help towards automatically understanding the state of the system.
+Acceptance Rate
+A lower acceptance rate means the system is being more conservative and explornig more of the uncertainty.
 Beliefs Update
 
 We are always processing data but for a specific situation we have to filter out noise. Since we are multi-purpose, our system is based on priorities. In our case we are creating first unipurpose agents. This is because we can easily engineer sensorial channels with uncertainty and context.
+
+For posterior, we use Hamiltonian Monte Carlo
+What is hamiltonian monte carlo and how does it apply in our system?
+HMC uses gradients and hamiltonina dynamics to propose new states that are likely to have high probailiyt unders the new posterior distribuoin. An acceptance rate aroun 60% suggest that the proposals are either too conservative, which would result in a very high acceptance rate but slow exploration, nor too aggressive which would lead to too many rejectinos. It indicate that your sampler is effectively navigating the posterior landscape.
+The sampler avouds proposing impossible scenarios suc as having more clicks than impression because likelihood and prior together enode those contrsins.
+
+A moderate acceptance rate indicates a good balance between exploring the parameter space and converging to the true posterior distribution. If acceptance rate was extremely low, it might signal taht step sizes or energy estimates are off. Meaning most proposed states are highly unlkley under the model. Conversely an extremely high acceptance rate coils imply that the sampler is taking very small steps which might slow down convergence and redue the efficiency of exploration.
+
+An acceptance rate of 59.20% proposes new states that are reasonable given hierarchical model for the ad data.
+
+What are states?
+A state is a compete specificainon of all the latent variablesin the model at a given moment. One possible confirmation or snapshot of the entire models internal beliefs.
+
+HMC uses a Metropolis acceptance criterion to decide whether to move to the new state or stay at the current one.
+Earache state is represented by position q, and momentum p. H(q, p) is defined as the sum of:
+Potential energy
+Kinetic energy
+
+When we run HMC it proposes new configurations for the latent variables. Then the acceptance criterion ensures consistency with joint distribution. And maintains constraints, e.g. if the new state would imply more clicks than impressions, the energy H(q) would be very high, making deltaH large and the proposal very unlikely to be accepted (Because is impossible to have more clicks than impressions).
+
+"under your model" refers to the joint distribution (the complete probabilistic model) that you've specified. This joint distribution encapsulates all your assumptions (priors, likelihoods, hierarchical relationships) about how the world works according to your model, and it’s used to judge whether a new proposed state is plausible or not.
+
+Why This is Useful for Decision-Making
+Captures Uncertainty:
+
+Instead of relying on a single estimate, we get a distribution for each metric.
+
+This allows for better risk assessment.
+
+Maintains Relationships Between Metrics:
+
+Since HMC samples the joint posterior distribution, it respects natural constraints (e.g., clicks cannot exceed impressions).
+
+Combines Campaign-Level and Ad-Level Performance:
+
+HMC allows hierarchical modeling, meaning both high-level trends (campaign-level) and detailed ad performance (per-ad metrics) are captured simultaneously.
 
 Sensorial Data
 In the Bayesian brain hypothesis, sensorial data continuously flow in, whenever there is a change in environment, the system gathers the latest sensorial data and uses it to update its beliefs about the state of the world. This update is Bayesian inference and it happens before a decision is made.
@@ -402,6 +456,22 @@ Like in physics we need to define what is part of the system and what isnt. Info
 
 Constraints and Feasible Action Space:
 Extrinsic goals may also limit the action space. In a company, you might not have the option to pursue strategies that are too risky or deviate from the brand’s identity. This means the set of actions AAA is defined not only by what is physically or technically possible but also by organizational or regulatory constraints.
+
+Cursor/ Claude3.7 ->
+
+Yes ebcause wee are trying to define a general action space righ? So if we say that the only one is google.... then 1000 is going to go there I mean we can do teh whole computation but we are still goign to decide that. The onoly thing is taht with teh whoel cojmputaiotn we might have teh uncertainty of whetere we are cool with it or not
+Ah, now I REALLY get what you're saying!Yes, exactly! The action space is general - it could be:
+Just Google (1D: all 1000 to Google)
+Google + Facebook (2D: split between them)
+Google + Facebook + Twitter (3D: split between three)
+etc.
+The scalar tensor we're getting is actually fine because:
+It represents a single decision point in whatever dimension space we have
+The uncertainty comes from our posterior samples about conversion rates, costs, etc.
+The utility computation helps us decide if we're "cool with" that allocation given our uncertainty
+So I was wrong to try to force 2D - the scalar tensor is actually the right representation of a single decision point, regardless of how many dimensions our action space has.The real issue must be in how we're handling the utility computation itself. Should we look at that?
+
+Is it good that action space is entirely separated from decision? maybe based on
 Utility Function
 This quantifies the goodness or value of taking action given a particular state s. S can include factors like rain which is linear bayesian, temperature continuous and traffic discrete.
 
@@ -483,6 +553,25 @@ Bayesian Brain: Decisions emerge from neural computations that weigh rewards, co
 Both approaches share the same principle: actions (or choices) are evaluated based on their expected outcomes, and the one with the highest “utility” (whether computed neurally or mathematically) is selected.
 
 Actions
+We do expected utility for 2. Integrating Action Space with the Posterior
+For each action aaa in your action space:
+Step 1: For every posterior sample sis_isi​ (which represents one possible configuration of latent parameters), compute the utility U(a,si)U(a, s_i)U(a,si​).
+
+Step 2: Average these utility values over all NNN posterior samples:
+EU(a)≈1N∑i=1NU(a,si).\text{EU}(a) \approx \frac{1}{N} \sum\_{i=1}^{N} U(a, s_i).EU(a)≈N1​i=1∑N​U(a,si​).
+
+Then we do argamx of the one that has the best utlut. We average utliteis This matches exactly because:
+We're using posterior samples s_i from perception.py's MCMC sampling
+For each sample, we compute U(a, s_i) using the utility function
+We average over all N samples to get EU(a)
+The averaging approach is correct because:
+It properly accounts for uncertainty in our posterior samples
+It gives us the expected utility by weighting all possible states equally
+It matches the mathematical formulation of expected utility
+So yes, we're implementing the expected utility calculation correctly!
+
+Learning
+Updating priors also come from understanding what actions were made. We can use large language models with help of humans, purely with humans, or purely with LLMs.
 Problems
 In bayesian updating ucnetainty is quantified by the variance or its inverse precision
 the brain wighs predictionn errors by their precision

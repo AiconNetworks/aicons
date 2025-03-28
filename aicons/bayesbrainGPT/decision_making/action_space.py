@@ -12,6 +12,7 @@ import tensorflow as tf
 import tensorflow_probability as tfp
 from tabulate import tabulate
 import json
+import itertools
 
 
 class ActionDimension:
@@ -287,67 +288,60 @@ class ActionSpace:
                     return False
         return True
     
-    def enumerate_actions(self, max_actions: int = 1000) -> List[Dict[str, Any]]:
+    def enumerate_actions(self, max_actions: Optional[int] = None) -> List[Dict[str, Any]]:
         """
         Enumerate all possible actions in the space.
         
-        For continuous dimensions, this uses discretization.
-        For very large spaces, this will return a sample.
-        
         Args:
-            max_actions: Maximum number of actions to enumerate
+            max_actions: Maximum number of actions to return. If None, return all possible actions.
             
         Returns:
             List of action dictionaries
         """
         if not self.is_discrete:
-            # If space has continuous dimensions, return a reasonable sampling
-            return [self.sample() for _ in range(min(max_actions, 1000))]
+            # If space has continuous dimensions with step size, enumerate all possible combinations
+            if all(hasattr(dim, 'step') and dim.step is not None for dim in self.dimensions):
+                # Calculate total number of possible combinations
+                total_combinations = 1
+                for dim in self.dimensions:
+                    num_steps = int((dim.max_value - dim.min_value) / dim.step) + 1
+                    total_combinations *= num_steps
+                
+                # If max_actions is None or total combinations is less than max_actions,
+                # enumerate all combinations
+                if max_actions is None or total_combinations <= max_actions:
+                    actions = []
+                    # Generate all possible combinations of values
+                    for values in itertools.product(*[
+                        np.arange(dim.min_value, dim.max_value + dim.step, dim.step)
+                        for dim in self.dimensions
+                    ]):
+                        action = {dim.name: value for dim, value in zip(self.dimensions, values)}
+                        # Check if action satisfies all constraints
+                        if self._check_constraints(action):
+                            actions.append(action)
+                    return actions
+                else:
+                    # For large spaces, sample randomly
+                    return [self.sample() for _ in range(max_actions)]
+            else:
+                # For truly continuous spaces, sample randomly
+                if max_actions is None:
+                    max_actions = 1000  # Default to 1000 samples for continuous spaces
+                return [self.sample() for _ in range(max_actions)]
         
-        # For small discrete spaces, enumerate everything
-        if self.size <= max_actions:
-            return self._enumerate_discrete_actions()
-        
-        # For large discrete spaces, return a sample
-        return [self.sample() for _ in range(max_actions)]
-    
-    def _enumerate_discrete_actions(self) -> List[Dict[str, Any]]:
-        """Enumerate all actions in a discrete space."""
-        # Get all values for each dimension
-        all_values = [dim.enumerate_values() for dim in self.dimensions]
-        
-        # Generate all combinations
-        actions = []
-        self._enumerate_recursive(all_values, 0, {}, actions)
-        
-        # Filter by constraints
-        return [action for action in actions if self._check_constraints(action)]
-    
-    def _enumerate_recursive(
-        self, all_values: List[List[Any]], 
-        dim_idx: int, 
-        current_action: Dict[str, Any],
-        actions: List[Dict[str, Any]]
-    ) -> None:
-        """
-        Recursively enumerate all combinations of discrete values.
-        
-        Args:
-            all_values: List of value lists for each dimension
-            dim_idx: Current dimension index
-            current_action: Partially built action
-            actions: List to store complete actions
-        """
-        # Base case: we've assigned values to all dimensions
-        if dim_idx >= len(self.dimensions):
-            actions.append(current_action.copy())
-            return
-        
-        # Recursive case: try each value for the current dimension
-        dim = self.dimensions[dim_idx]
-        for value in all_values[dim_idx]:
-            current_action[dim.name] = value
-            self._enumerate_recursive(all_values, dim_idx + 1, current_action, actions)
+        # For discrete spaces, enumerate all possible combinations
+        if max_actions is None or self.size <= max_actions:
+            # Generate all possible combinations
+            actions = []
+            for values in itertools.product(*[dim.values for dim in self.dimensions]):
+                action = {dim.name: value for dim, value in zip(self.dimensions, values)}
+                if self._check_constraints(action):
+                    actions.append(action)
+            return actions
+        else:
+            # For large discrete spaces, sample randomly
+            return [self.sample() for _ in range(max_actions)]
     
     def evaluate_actions(self, utility_fn: Callable[[Dict[str, Any], Dict[str, Any]], float], 
                         posterior_samples: Dict[str, np.ndarray], 

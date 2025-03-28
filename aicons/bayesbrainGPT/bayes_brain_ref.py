@@ -29,6 +29,8 @@ import numpy as np
 import uuid
 from abc import ABC, abstractmethod
 import time
+import os
+import json
 
 # Import core components
 from .utility_function import create_utility
@@ -88,6 +90,11 @@ class BayesBrain:
         self.last_decision_time = None
         self.last_action = None
         self.last_utility = None
+        
+        # Store posterior samples here
+        self.posterior_samples = None
+        self.last_posterior_update = None  # Timestamp of last posterior update
+        self.update_history = []
     
     def set_aicon(self, aicon: Any) -> None:
         """
@@ -116,14 +123,30 @@ class BayesBrain:
         """
         return self.state.get_state()
     
-    def get_posterior_samples(self) -> Dict[str, Any]:
+    def get_posterior_samples(self, num_samples: Optional[int] = None) -> Dict[str, Any]:
         """
         Get samples from the posterior distribution.
         
+        Args:
+            num_samples: Number of samples to return. If None, return all available.
+            
         Returns:
             Dictionary of posterior samples
         """
-        return self.state.sample_from_posterior()
+        if self.posterior_samples is None:
+            print("No posterior samples available")
+            return {}
+        
+        # If num_samples specified, randomly sample that many
+        if num_samples is not None and num_samples < len(next(iter(self.posterior_samples.values()))):
+            indices = np.random.choice(len(next(iter(self.posterior_samples.values()))), 
+                                    size=num_samples, replace=False)
+            return {
+                name: samples[indices] if isinstance(samples, np.ndarray) else samples
+                for name, samples in self.posterior_samples.items()
+            }
+        
+        return self.posterior_samples
     
     def find_best_action(self, num_samples: Optional[int] = None) -> Tuple[Optional[Dict[str, Any]], float]:
         """
@@ -170,7 +193,7 @@ class BayesBrain:
         # Compute utility for each action
         for action in actions:
             # Sample from posterior given action
-            posterior_samples = self.state.sample_from_posterior(num_samples)
+            posterior_samples = self.get_posterior_samples(num_samples)
             
             # Compute utility for each sample
             utilities = []
@@ -462,14 +485,47 @@ class BayesBrain:
         """
         Update beliefs based on data from a specific sensor.
         
-        Args:
-            sensor_name: Name of the sensor to use
-            environment: Optional environment data
-            
-        Returns:
-            True if update was successful
+        At time t:
+        - We have posterior_samples_t (stored in brain)
+        
+        At time t+1:
+        - Get new sensor data
+        - Use posterior_samples_t as prior
+        - Generate new posterior_samples_t+1
+        - Store posterior_samples_t+1 in brain
         """
-        return self.perception.update_from_sensor(sensor_name, environment)
+        print("\n=== Starting Belief Update ===")
+        print(f"Current time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+        
+        # Get current posterior samples (from time t)
+        current_samples = self.get_posterior_samples()
+        if current_samples:
+            print(f"Using current posterior as prior (from {self.last_posterior_update})")
+        
+        # Update with new sensor data
+        success = self.perception.update_from_sensor(sensor_name, environment)
+        
+        if success:
+            # Generate new posterior samples for time t+1
+            new_sensor_data = self.perception.collect_sensor_data(environment)
+            updated_samples = self.perception.sample_posterior(new_sensor_data)
+            
+            # Store new posterior samples (time t+1) in brain
+            self.set_posterior_samples(updated_samples)
+            
+            # Record update in history
+            self.update_history.append({
+                'timestamp': self.last_posterior_update,
+                'sensor': sensor_name,
+                'num_samples': len(next(iter(updated_samples.values()))),
+                'parameters': list(updated_samples.keys())
+            })
+            
+            print(f"Successfully updated beliefs at {self.last_posterior_update}")
+            print(f"Total updates in history: {len(self.update_history)}")
+            return True
+        
+        return False
     
     def update_from_all_sensors(self, environment: Any = None) -> bool:
         """
@@ -482,68 +538,36 @@ class BayesBrain:
             True if update was successful
         """
         return self.perception.update_all(environment)
-
-# Example usage
-if __name__ == "__main__":
-    # Create a BayesBrain instance
-    brain = BayesBrain(
-        name="MarketingBrain",
-        description="A Bayesian brain for marketing optimization"
-    )
     
-    # Set state factors from AIcon
-    state_factors = {
-        "base_conversion_rate": {
-            "type": "continuous",
-            "value": 0.05,
-            "params": {"scale": 0.01}
-        },
-        "primary_channel": {
-            "type": "categorical",
-            "value": "google",
-            "categories": ["google", "facebook", "twitter"],
-            "params": {"probs": [0.7, 0.2, 0.1]}
-        },
-        "optimal_daily_ads": {
-            "type": "discrete",
-            "value": 8,
-            "constraints": {"lower": 0, "upper": 10}
-        }
-    }
-    brain.set_state_factors(state_factors)
+    def set_posterior_samples(self, samples: Dict[str, Any]):
+        """
+        Set the posterior samples directly.
+        
+        Args:
+            samples: Dictionary of posterior samples with factor information
+        """
+        # Store posterior samples directly
+        self.posterior_samples = samples
+        
+        self.last_posterior_update = time.strftime("%Y-%m-%d %H:%M:%S")
+        print(f"Updated posterior samples at {self.last_posterior_update}")
+        
+        # Print sample statistics
+        print("\nPosterior Sample Statistics:")
+        for name, samples in self.posterior_samples.items():
+            if isinstance(samples, np.ndarray):
+                print(f"- {name}:")
+                print(f"  Mean: {np.mean(samples):.3f}")
+                print(f"  Std: {np.std(samples):.3f}")
+                print(f"  Min: {np.min(samples):.3f}")
+                print(f"  Max: {np.max(samples):.3f}")
+            else:
+                print(f"- {name}: {samples}")
     
-    # Set up action space from AIcon
-    from .decision_making.action_space import create_budget_allocation_space
-    action_space = create_budget_allocation_space(
-        total_budget=1000.0,
-        num_ads=2,
-        budget_step=100.0
-    )
-    brain.set_action_space(action_space)
+    def _load_saved_state(self):
+        """Load saved state from file if available."""
+        pass  # No file loading needed
     
-    # Set up utility function from AIcon
-    from .utility_function import create_utility
-    utility_function = create_utility(
-        utility_type="marketing_roi",
-        action_space=action_space,
-        revenue_per_sale=10.0,
-        num_ads=2,
-        num_days=3
-    )
-    brain.set_utility_function(utility_function)
-    
-    # Initialize perception
-    brain.initialize_perception()
-    
-    # Example sensor data from AIcon
-    sensor_data = {
-        "base_conversion_rate": (0.063, 0.8),
-        "primary_channel": ("google", 0.9),
-        "optimal_daily_ads": (8, 0.7)
-    }
-    
-    # Update beliefs
-    brain.update_beliefs(sensor_data)
-    
-    # Make a decision
-    best_action, expected_utility = brain.take_action() 
+    def _save_state(self):
+        """Save current state to file."""
+        pass  # No file saving needed

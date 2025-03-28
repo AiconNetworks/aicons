@@ -21,7 +21,6 @@ class BayesianPerception:
         """
         self.brain = brain
         self.sensors = {}
-        self.posterior_samples = {}
         # Factor name mapping to support different naming conventions between sensors and state factors
         self.factor_name_mapping = {}  # Maps from sensor factor names to state factor names
         
