@@ -627,6 +627,20 @@ class ActionSpace:
         
         output.append(f"dimensions: {dims}")
         
+        # Print size information
+        if self.is_discrete:
+            output.append(f"size: {self.size} (discrete)")
+        else:
+            if all(hasattr(dim, 'step') and dim.step is not None for dim in self.dimensions):
+                # Calculate total combinations for stepped continuous dimensions
+                total_combinations = 1
+                for dim in self.dimensions:
+                    num_steps = int((dim.max_value - dim.min_value) / dim.step) + 1
+                    total_combinations *= num_steps
+                output.append(f"size: {total_combinations} (stepped continuous)")
+            else:
+                output.append("size: infinite (continuous)")
+        
         # Print constraints
         constraints = []
         for constraint in self.constraints:
