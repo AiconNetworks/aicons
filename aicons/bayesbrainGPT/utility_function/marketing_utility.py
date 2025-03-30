@@ -55,6 +55,10 @@ class MarketingROIUtility(UtilityFunction):
             'risk': 0.0        # Weight for risk/variance penalty
         }
     
+    def __str__(self) -> str:
+        """Show exactly what this utility function computes."""
+        return f"MarketingROIUtility: revenue_per_sale={self.revenue_per_sale}, num_ads={self.num_ads}, num_days={self.num_days}, weights={self.weights}"
+    
     def evaluate(self, action: Dict[str, Any], state_sample: Dict[str, Any]) -> float:
         """
         Evaluate the marketing ROI utility for a specific state sample.

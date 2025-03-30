@@ -14,6 +14,9 @@ from typing import Dict, Any, Optional, List, Tuple, Union
 import numpy as np
 from abc import ABC, abstractmethod
 import tensorflow_probability as tfp
+import time
+import logging
+from datetime import datetime
 
 # Import BayesBrain and its components
 from ..bayesbrainGPT.bayes_brain_ref import BayesBrain
@@ -218,7 +221,32 @@ class AIcon(ABC):
         Returns:
             Tuple of (best_action, expected_utility)
         """
-        return self.brain.find_best_action(num_samples)
+        start_time = time.time()
+        logger = logging.getLogger(__name__)
+        logger.info(f"Starting find_best_action with {num_samples if num_samples else 'default'} samples")
+
+        try:
+            # Get the result from brain
+            result = self.brain.find_best_action(num_samples)
+            
+            end_time = time.time()
+            duration = end_time - start_time
+            
+            if result:
+                best_action, expected_utility = result
+                logger.info(f"find_best_action completed in {duration:.2f} seconds")
+                logger.info(f"Best action found: {best_action}")
+                logger.info(f"Expected utility: {expected_utility}")
+            else:
+                logger.warning(f"find_best_action completed in {duration:.2f} seconds but returned no result")
+            
+            return result
+            
+        except Exception as e:
+            end_time = time.time()
+            duration = end_time - start_time
+            logger.error(f"find_best_action failed after {duration:.2f} seconds with error: {str(e)}")
+            raise
     
     def get_state(self) -> Dict[str, Any]:
         """Get the current state beliefs."""

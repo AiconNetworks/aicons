@@ -92,6 +92,10 @@ class LinearUtility(UtilityFunction):
         conversion_rate = 0.1  # Example: 10% conversion rate
         brand_factor = 0.05   # Example: 5% brand impact per dollar
         
+        # Ensure action_values is a tensor
+        if not isinstance(action_values, tf.Tensor):
+            action_values = tf.convert_to_tensor(action_values, dtype=tf.float32)
+        
         # Compute components
         expected_revenue = action_values * conversion_rate
         cost = action_values
@@ -101,4 +105,13 @@ class LinearUtility(UtilityFunction):
         utility = expected_revenue - cost + brand_impact
         
         # Apply weights to each campaign's utility
+        # Ensure weights is a tensor
+        if not isinstance(self.weights, tf.Tensor):
+            self.weights = tf.convert_to_tensor(self.weights, dtype=tf.float32)
+        
+        # Reshape weights if needed
+        if len(tf.shape(self.weights)) == 1:
+            self.weights = tf.reshape(self.weights, [-1])
+        
+        # Compute weighted sum
         return tf.reduce_sum(utility * self.weights, axis=-1) 

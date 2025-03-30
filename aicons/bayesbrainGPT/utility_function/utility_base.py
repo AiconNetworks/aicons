@@ -105,8 +105,11 @@ class UtilityFunction(ABC):
         # Evaluate using TensorFlow
         utility_tensor = self.evaluate_tf(action_tensor, state_tensors)
         
-        # Return scalar value
-        return float(utility_tensor[0])
+        # Handle both scalar and array tensor outputs
+        if tf.size(utility_tensor) == 1:
+            return float(utility_tensor)
+        else:
+            return float(utility_tensor[0])
     
     def batch_evaluate(self, action: Dict[str, Any], 
                       state_samples: Dict[str, List[Any]]) -> List[float]:

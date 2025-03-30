@@ -31,6 +31,7 @@ from abc import ABC, abstractmethod
 import time
 import os
 import json
+import ast
 
 # Import core components
 from .utility_function import create_utility
@@ -121,7 +122,7 @@ class BayesBrain:
         Returns:
             Dictionary of current state beliefs
         """
-        return self.state.get_state()
+        return self.state.get_beliefs()
     
     def get_posterior_samples(self, num_samples: Optional[int] = None) -> Dict[str, Any]:
         """
@@ -158,23 +159,126 @@ class BayesBrain:
         Returns:
             Tuple of (best_action, expected_utility)
         """
+        print("\n=== Starting find_best_action ===")
+        print(f"Action space type: {type(self.action_space)}")
+        print(f"Utility function type: {type(self.utility_function)}")
+        
         if not self.action_space or not self.utility_function:
             raise ValueError("Action space and utility function must be set before finding best action")
             
-        # Get current state
-        current_state = self.get_state()
+        # Get posterior samples from perception
+        print("\nGetting posterior samples from perception system...")
+        posterior_samples = self.get_posterior_samples()
+        print(f"\nPosterior samples shape: {len(next(iter(posterior_samples.values())))} samples")
+        print(f"Posterior sample keys: {list(posterior_samples.keys())}")
+        print("\nFirst posterior sample:")
+        for key, value in posterior_samples.items():
+            print(f"- {key}: {value[0] if isinstance(value, np.ndarray) else value}")
         
-        # Sample actions
-        if num_samples is None:
-            num_samples = self.decision_params["num_samples"]
+        # Initialize action utilities dictionary
+        action_utilities = {}
+        
+        # Get all possible actions from action space dimensions
+        possible_actions = self.action_space.enumerate_actions()
+        print(f"\nEvaluating {len(possible_actions)} possible actions")
+        print("\nAction space dimensions:")
+        for dim in self.action_space.dimensions:
+            print(f"- {dim.name}: {dim.dim_type}")
+            if dim.dim_type == 'continuous':
+                print(f"  Range: [{dim.min_value}, {dim.max_value}]")
+                print(f"  Step: {dim.step}")
+        
+        # Evaluate each possible action
+        for action in possible_actions:
+            print(f"\nEvaluating action: {action}")
+            print(f"Action type: {type(action)}")
+            print(f"Action keys: {action.keys()}")
+            print(f"Action values: {action.values()}")
+            utility = 0.0
             
-        # Get action utilities
-        action_utilities = self.compute_action_utilities(current_state, num_samples)
+            # Convert action values to float32
+            action_float32 = {k: float(v) for k, v in action.items()}
+            print(f"\nConverted action to float32: {action_float32}")
+            
+            # If we have a method-based utility function
+            if hasattr(self.utility_function, 'evaluate'):
+                print("\nUsing method-based utility function")
+                # If we have posterior samples, use expected_utility method
+                if posterior_samples:
+                    if hasattr(self.utility_function, 'expected_utility'):
+                        print("\nUsing expected_utility method")
+                        utility = self.utility_function.expected_utility(action_float32, posterior_samples)
+                        print(f"Computed utility: {utility}")
+                    else:
+                        # Compute expected utility over posterior samples
+                        all_utilities = []
+                        print("\nComputing utilities for each posterior sample:")
+                        for j in range(len(next(iter(posterior_samples.values())))):
+                            # Extract the j-th sample for each parameter
+                            sample = {k: v[j] for k, v in posterior_samples.items()}
+                            print(f"\nPosterior sample {j+1}:")
+                            for k, v in sample.items():
+                                print(f"- {k}: {v}")
+                            
+                            sample_utility = self.utility_function.evaluate(action_float32, sample)
+                            print(f"Utility for this sample: {sample_utility}")
+                            all_utilities.append(sample_utility)
+                        
+                        utility = sum(all_utilities) / len(all_utilities)
+                        print(f"\nAverage utility over {len(all_utilities)} samples: {utility}")
+                else:
+                    # Use state factors directly if no posterior samples
+                    print("\nUsing state factors directly")
+                    utility = self.utility_function.evaluate(action_float32, self.state_factors)
+                    print(f"Computed utility: {utility}")
+            
+            # If we have a callable utility function 
+            elif callable(self.utility_function):
+                print("\nUsing callable utility function")
+                if posterior_samples:
+                    # Compute expected utility over posterior samples
+                    all_utilities = []
+                    print("\nComputing utilities for each posterior sample:")
+                    for j in range(len(next(iter(posterior_samples.values())))):
+                        # Extract the j-th sample for each parameter
+                        sample = {k: v[j] for k, v in posterior_samples.items()}
+                        print(f"\nPosterior sample {j+1}:")
+                        for k, v in sample.items():
+                            print(f"- {k}: {v}")
+                        
+                        sample_utility = self.utility_function(action_float32, sample)
+                        print(f"Utility for this sample: {sample_utility}")
+                        all_utilities.append(sample_utility)
+                    
+                    utility = sum(all_utilities) / len(all_utilities)
+                    print(f"\nAverage utility over {len(all_utilities)} samples: {utility}")
+                else:
+                    # Use state factors directly if no posterior samples
+                    print("\nUsing state factors directly")
+                    utility = self.utility_function(action_float32, self.state_factors)
+                    print(f"Computed utility: {utility}")
+            
+            # Store the utility for this action using a tuple as the key
+            action_key = tuple(sorted(action.items()))
+            print(f"\nStoring utility with key: {action_key}")
+            action_utilities[action_key] = utility
+            print(f"Stored utility {utility} for action {action}")
         
-        # Select best action
-        return self.select_best_action(action_utilities)
+        # Use select_best_action to choose the best action
+        print("\nSelecting best action from utilities:")
+        for key, util in action_utilities.items():
+            print(f"- Action: {dict(key)}, Utility: {util}")
+            
+        best_action_key = max(action_utilities.items(), key=lambda x: x[1])[0]
+        best_action = dict(best_action_key)
+        expected_utility = action_utilities[best_action_key]
+        
+        print(f"\nBest action: {best_action}")
+        print(f"Expected utility: {expected_utility}")
+        
+        return best_action, expected_utility
     
-    def compute_action_utilities(self, state: Dict[str, Any], num_samples: int) -> Dict[Dict[str, Any], float]:
+    def compute_action_utilities(self, state: Dict[str, Any], num_samples: int) -> Dict[str, float]:
         """
         Compute expected utilities for all possible actions.
         
@@ -183,31 +287,53 @@ class BayesBrain:
             num_samples: Number of samples to use
             
         Returns:
-            Dictionary mapping actions to their expected utilities
+            Dictionary mapping action keys to their expected utilities
         """
+        print("\n=== Debug: compute_action_utilities ===")
+        print(f"Input state: {state}")
+        
         action_utilities = {}
         
-        # Sample actions from the action space
-        actions = self.action_space.sample_actions(num_samples)
+        # Get posterior samples once for all actions
+        posterior_samples = self.get_posterior_samples(num_samples)
+        print(f"\nPosterior samples: {posterior_samples}")
         
-        # Compute utility for each action
-        for action in actions:
-            # Sample from posterior given action
-            posterior_samples = self.get_posterior_samples(num_samples)
+        # Get all possible actions from action space dimensions
+        possible_actions = self.action_space.enumerate_actions()
+        print(f"\nEvaluating {len(possible_actions)} possible actions")
+        
+        # Evaluate each possible action
+        for action in possible_actions:
+            print(f"\nProcessing action: {action}")
             
-            # Compute utility for each sample
-            utilities = []
-            for sample in posterior_samples:
-                utility = self.utility_function(action, sample)
-                utilities.append(utility)
-                
-            # Average utility across samples
-            expected_utility = np.mean(utilities)
-            action_utilities[action] = expected_utility
+            # Create a single sample dictionary with current values
+            sample = {}
+            for name, samples in posterior_samples.items():
+                if isinstance(samples, np.ndarray):
+                    # If it's an array, use the first value
+                    sample[name] = float(samples[0])
+                else:
+                    # If it's a scalar value, use it directly
+                    sample[name] = float(samples)
+            
+            print(f"\nFinal sample dictionary: {sample}")
+            
+            # Use evaluate method
+            try:
+                utility = self.utility_function.evaluate(action, sample)
+                print(f"Computed utility: {utility}")
+                # Convert action to tuple for use as key
+                action_key = tuple(sorted(action.items()))
+                action_utilities[action_key] = utility
+            except Exception as e:
+                print(f"Error computing utility: {str(e)}")
+                print(f"Action type: {type(action)}")
+                print(f"Sample type: {type(sample)}")
+                raise
             
         return action_utilities
     
-    def select_best_action(self, action_utilities: Dict[Dict[str, Any], float]) -> Tuple[Optional[Dict[str, Any]], float]:
+    def select_best_action(self, action_utilities: Dict[str, float]) -> Tuple[Optional[Dict[str, Any]], float]:
         """
         Select the best action using argmax on expected utilities.
         
@@ -221,8 +347,12 @@ class BayesBrain:
             return None, 0.0
             
         # Find action with maximum utility
-        best_action = max(action_utilities.items(), key=lambda x: x[1])
-        return best_action
+        best_action, best_utility = max(action_utilities.items(), key=lambda x: x[1])
+        
+        print(f"\nSelected best action: {best_action}")
+        print(f"Expected utility: {best_utility}")
+        
+        return best_action, best_utility
     
     def take_action(self, num_samples: Optional[int] = None) -> Tuple[Optional[Dict[str, Any]], float]:
         """

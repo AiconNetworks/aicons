@@ -68,6 +68,12 @@ def create_utility(utility_type: str, action_space: ActionSpace, **kwargs) -> Ut
     
     # Create utility function using factory
     utility_class = UTILITY_FACTORIES[utility_type]
+    
+    # Remove name and description from kwargs for utility classes that don't accept them
+    if utility_type in ['marketing_roi', 'constrained_marketing_roi', 'weather_dependent_marketing_roi']:
+        kwargs.pop('name', None)
+        kwargs.pop('description', None)
+    
     return utility_class(**kwargs)
 
 
