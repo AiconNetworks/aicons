@@ -1,4 +1,4 @@
-# AIcons Framework: Tools and Limbs
+# AIcons Framework: Tools
 
 ## Core Concepts
 
