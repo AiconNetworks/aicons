@@ -183,20 +183,40 @@ class BayesianPerception:
             
         return log_likelihood
     
-    def sample_posterior(self, observations):
+    def sample_posterior(self, observations=None):
         """
         Sample from the posterior distribution given observations.
+        If no observations are provided, samples from the prior distribution.
         Uses hierarchical sampling which can handle both dependent and independent priors.
         
         Args:
-            observations: Dictionary mapping factor names to (value, reliability) tuples
+            observations: Optional dictionary mapping factor names to (value, reliability) tuples
             
         Returns:
             Dictionary of posterior samples for each factor
         """
-        print("Sampling posterior distribution...")
+        # If no observations provided, just sample from prior
+        if not observations:
+            print("\nNo posterior information available, using prior distributions")
+            joint_dist = self.create_joint_prior()
+            samples = joint_dist.sample(1000)  # Sample 1000 times from prior
+            
+            # Convert samples to dictionary format
+            self.posterior_samples = {}
+            state_factors = self.brain.get_state_factors()
+            
+            # Handle both list and dictionary returns from joint_dist.sample()
+            if isinstance(samples, list):
+                # If it's a list, convert to dictionary using state factor names
+                for i, name in enumerate(state_factors.keys()):
+                    self.posterior_samples[name] = samples[i].numpy()
+            else:
+                # If it's already a dictionary
+                self.posterior_samples = {k: v.numpy() for k, v in samples.items()}
+            
+            return self.posterior_samples
         
-        # Always use hierarchical sampling
+        # If observations are provided, use hierarchical sampling
         return self._sample_posterior_hierarchical(observations)
     
     def _sample_posterior_hierarchical(self, observations):

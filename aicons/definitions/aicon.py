@@ -186,18 +186,30 @@ class AIcon(ABC):
         self.brain.add_sensor(name, sensor, factor_mapping)
         return sensor
     
-    def update_from_sensor(self, sensor_name: str, environment: Any = None) -> bool:
+    def update_from_sensor(self, sensor_name: Optional[Union[str, List[str]]] = None, environment: Any = None) -> bool:
         """
-        Update beliefs based on data from a specific sensor.
+        Update beliefs based on data from sensors.
         
         Args:
-            sensor_name: Name of the sensor to use
+            sensor_name: Name of the sensor to use, list of sensor names, or None to use all sensors
             environment: Optional environment data to pass to the sensor
             
         Returns:
             True if update was successful
         """
-        return self.brain.update_from_sensor(sensor_name, environment)
+        if sensor_name is None:
+            # If no sensor specified, use update_all which will use priors if no sensors
+            return self.brain.perception.update_all(environment)
+        elif isinstance(sensor_name, list):
+            # If list of sensors provided, update from each one
+            success = True
+            for name in sensor_name:
+                if not self.brain.update_from_sensor(name, environment):
+                    success = False
+            return success
+        else:
+            # Single sensor case
+            return self.brain.update_from_sensor(sensor_name, environment)
     
     def update_from_all_sensors(self, environment: Any = None) -> bool:
         """

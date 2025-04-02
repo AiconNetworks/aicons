@@ -103,12 +103,16 @@ So we are using the logical interpretation of probability; bayesian probability 
 For bayesian analysis we need two things:
 Likelihood of data
 beliefs in term of a prior
+
+Active Inference for Self-Organizing Multi-LLM Systems: A Bayesian Thermodynamic Approach to Adaptation
+Multimedia Review
+
 Assumptions
 We think that rather to store values in memory we can compute priors and update priors as we go along. This way we can do continuous learning through bayesian interpretation of actions.
 
 We assume through bayesian brain hypothesis that the bayesbrainGPT builds probabilistic models that can explicitly represent dependencies, covariances and interaciotns among variables. We handle precision
 We handle covariance and interrelations of factors by using precision precision adn incertany and modeling it as a hierarchical model .This would allow higher level priors rto capture global dependences. Fore example a high-level model might encode typical weather patterns taht affect multiple lower-level variables like temperature , humidity and rain.
-
+Un
 The brain might encode this uncertainty using population codes, where neural activity patterns reflect variance (uncertainty about a single variable) and covariance (how two variables relate). Since we are using llms as proxy of experience data storage similar to what the brain does, we are going to assume this encoding as well for now.
 State representation
 Brain develops priors over time based on past experiences and learned regularities about the world. These priors act as a framework for interpreting new sensory input. Large language models have many priors embedded in their language. In order for LLMs to autocomplete the following words, they will do so by probabilistically choosing the best token until it reaches a stop. Language gotten from the internet has priors embedded in it. When we say, or type something we do it based on our assumptions. Having the experience of the whole internet, we could benefit from these priors or factors for decision making. Then these pre=existing expectations are used by the brain to make sense of the incoming sensory data.
@@ -325,7 +329,52 @@ Traffic incidents might be more frequent in bad weather. We can model ddd with a
 d∣ω∼Poisson(λ(ω)),d \mid \omega \sim \text{Poisson}(\lambda(\omega)),d∣ω∼Poisson(λ(ω)),
 where λ(ω)\lambda(\omega)λ(ω) is the expected number of incidents given the weather type. Hyperpriors could also be placed on λ(ω)\lambda(\omega)λ(ω) if desired.
 
+Problems:
+Combinatorial Explosion
+
+Maybe solution:
+State Representation abstraction.
+This means that the lower layered priors are going to be abstracted or “embedded” in hier level priors. Then when there is a need to diagnose we can actually go deep into the layers so that we see what could the problem be.
+
 Perception
+
+System:
+
+What it is
+Works
+Hamiltonian Monte Carlo
+Reject a move or accept a move based on Metroplis-Hastings Criterion
+Get
+
+We are using Monte Carlo simulation in order to model uncertainty.
+
+Handling Categorical Variables
+Categorical variables can be challenging in gradient-based samplers like HMC/NUTS because they require differentiability, and categorical distributions are discrete. Here are some common strategies to handle them:
+
+Continuous Relaxations (e.g., Gumbel-Softmax/Concrete Distribution):
+Replace the discrete categorical variable with a continuous approximation. The Gumbel-Softmax trick allows you to sample a differentiable approximation of a categorical variable by using a softmax over perturbed logits. This way, the sampler operates on continuous, differentiable proxies that approximate the categorical distribution.
+
+Marginalization:
+If the model structure allows it, you can analytically marginalize over the categorical variable. By integrating it out, you work with a model that only has continuous parameters, avoiding the need to sample discrete states directly.
+
+Hybrid Sampling (Gibbs or Metropolis-within-Gibbs):
+Use HMC or NUTS for the continuous parts of the model and apply Gibbs sampling or a discrete Metropolis step for the categorical variables. This can be more complicated to implement but allows you to handle discrete and continuous parts separately.
+
+Sequential Monte Carlo (SMC):
+Some SMC methods naturally handle both discrete and continuous variables, though they may require more tuning or computational effort.
+
+In practice, many modern applications use the continuous relaxation approach (like Gumbel-Softmax) when using gradient-based methods such as HMC/NUTS. This lets you retain a fully differentiable model while approximating the behavior of categorical variables.
+
+Incorporation of pseudo-data or expert statements as perception (inference) step.
+Gather Observations (or Pseudo-Observations)
+could be real sensor measurement , or soft/subjective evidence (an LLM statement, friends opinion, own guess.)
+Form (or update) the Posterior over the relevant latent vairbels.
+If new data is real data, we have a standard likelihood
+If pseudo-data (expert statment) we define a likelihood model that expresses how likely that statement would be under different hypotheses. That effectively yields a bayes factor and updates the prior.
+Use the posterior in the decision step to compute expected utility and select an action.
+Example:
+(A) Perception/Inference –> Update beliefs (posterior) using priors + any new evidence (be it real data or pseudo‐data).
+(B) Decision/Planning –> Choose the action that maximizes expected utility under the updated beliefs.
 
 NUTS with continuous relaxation
 NUTS can be applied without having to enumerate discrete sites.
@@ -433,6 +482,8 @@ Action space
 Defining the action space.
 In this step we set the actions available to the decision maker. The actions are determined by practical constraints and top-down considerations.
 
+Action space might be able to be already predefined with assumptions or with preferences. Or Aicon can explore from a full uncertainty mode. So my thinking is that all hypotheses are embedded in the action space. What this means? That
+
 Why top down?
 Top-down considerations
 ACtion space is defined by our practical abilities and constraints, while our state might include that birds fly and they take less time transporting we should restrict our action space to car and walk because we are constrained/capped by human capability. Unless we have a alken or a bike. This is very interesting because top down considerations are created based on external factors, like tools. These restrictions are imposed externally by design.
@@ -473,6 +524,42 @@ So I was wrong to try to force 2D - the scalar tensor is actually the right repr
 
 Is it good that action space is entirely separated from decision? maybe based on
 Utility Function
+
+A utility function is a formal way to represent an agent’s preferences numerically. HIgher utility means “more preferred”, lower means less preferred. In everyday terms, if we say outcome X has a utility 10 and outcome Y has utility 5, we are simply saying that X is twice as desirable as Y. In bayesian decision we treat utility as a cardinal scale, so difference form 10 to 5 can be interpreted as x IS 5 units better than Y. Its good to have actual numeric values so that we can compute expected utilities under uncertainty.
+
+Positive and negative.
+We can define positive whic +10 is good +2 is less godd or a negative scale, -10 bad outcome and -2 less bad.
+
+Common ways to construc a utility function
+Cost/Benefit
+list all relevant costs and benefits of a decision and then add them up.
+Example: U(\text{Umbrella}, R=1) = -(\text{carry_cost}) = -1, U(\text{NoUmbrella}, R=1) = -(\text{wet_cost}) = -5,
+Monetary Utility
+Take posterior over the unknown parameters, future demand, click-through rates, etc. Then compute expected monetary payoff for each action and then pick the action wiht the highest expected payoff.
+U(Action)=Revenue(Action)−Cost(Action).
+Multi-attribute Utility
+Real decisions often involve multiple goals; cost, time and comfort, one approach is to combine them into a single composite utility.
+U=w1​×(-cost)+w2​×(-time)+w3​×(comfort_score),
+Weights reflect how important each dimension is to you. While assigning weights can be subjective, its a standard method in multi-criteria decision analysis
+Interesting because this means that competitive advantage would depend on how well you can allocate the weights.
+Risk Attitudes, we might have risk aaversio preferring a sure smaller reward over a risky bigger reward. Then utility migh be a nonlinear transformation of monterey outcomes
+U(x)=log(x)orU(x)=1−e−αx,
+Penalizing risky scenarios heavuliy. This is common in finance and economics, where one uses expected utility but with a utility function that reflects teh agents risk preference.
+
+Bayesian Inference + Utility = Bayesian Decision Theory
+Bayesian inference give us P(state∣observations)
+State is P(R=1∣O)., whether it will rain or not.
+Utility function tells us how good or bad each action is given the state rain or no rain.
+Expected utility is computed by taking the utility for each state and averaging over the posterior belief about those states.
+E[U(a)∣O]=possible states s∑​P(s∣O)U(a,s).
+Action selection, picks a\* with the highest expected utility.
+We can alos mix utility with constraints; sometimes we have hard contains that certain actions are disallowed or must meet certain rules. Bayesian inference still updates beliefs about the world but if the hightesy utility actions is outside constraints you cant pick it. In this case we can raise an alert, and select best feasible action.
+
+a∗=a∈Afeasible​argmax​E[U(a)∣O].
+
+TRAINING / LEARNING
+Utility fucniotn is somehow subjective, it encodes values and organizations goal. We can modify it to reflect different trade-offs. IN formal decision analysis we might do a asnesitivy analysis, varying the values or wights in utility function to see if the recommended action changes drastically. If it does we know the decision is highly sensitive to these assumptions.
+
 This quantifies the goodness or value of taking action given a particular state s. S can include factors like rain which is linear bayesian, temperature continuous and traffic discrete.
 
 Specifying Utility Function
@@ -570,8 +657,22 @@ It gives us the expected utility by weighting all possible states equally
 It matches the mathematical formulation of expected utility
 So yes, we're implementing the expected utility calculation correctly!
 
-Learning
+Feedback & Learning
 Updating priors also come from understanding what actions were made. We can use large language models with help of humans, purely with humans, or purely with LLMs.
+
+Once an action is taken, teh system observes teh outcome. This obsergvation is compared against what was predicted by the current posterior beliefs. For instanc eif the system predicted a 63% chance of rain and chose to carry an umbrella, teh actual weather outcome, rain or no rain is recorded.
+
+Error Signal generation.
+The difference between predicted outcome and the actual outcome generates an error signal, it represents how off the system's prediction was.
+
+If it rains as predicted the error is minimal, if it doesn't rain, the error is larger indicating that the confidence in the pseudo-data (or likelihood model) may have been overestimated.
+
+Learning: Updating beliefs and models.
+Reinforcement, if predictions constantly match outcomes the system can become more confident, effectively narrowing the prior distribution (reducing uncertainty)
+
+Correction: if outcomes consistently deviate form predictions, the system updates teh prior. For example if “soft” evidence from an LLM overestimates the chance of rain, the system can adjust by widening the prior or shifting its mean.
+
+The system can also learn to or recalibrate the infunce of different data sources. Real DATA VS Pseudo Data if actual outcomes consistently diverge form those predicted by psued data. The system might decrese th ewitgh assigned to that pseudo evidence. Byaes factor calibration. Over time by pbseiven the actual outcomes, teh system can calibrate likelihods. This modifies byes factor used in updating posterior.
 Problems
 In bayesian updating ucnetainty is quantified by the variance or its inverse precision
 the brain wighs predictionn errors by their precision
@@ -589,6 +690,9 @@ The brain likely uses approximate methods (such as sampling or variational infer
 
 multi-variate gaussian  
 More elements
+
+Markov Chain Monte Carlo
+For multi-variate, weird looking distributions, we might need to make teh M in Mg(x) to be very large to encompass the whole distribution. But when M is huge we get into very inefficient sampling, because the probability of accepting a sample is f / Mg(x), and when M is huge we ar going to barely accept samples.
 
 Reactions
 Reactions come from sensorial data. In order to have a fully automatic agent, we need to define reactions and have a way to compute them. Here we will introduce statistical quality control and control charts. These are going to determine alerts and make the Aicon to recompute priors and posteriors to determine actions.
@@ -656,6 +760,20 @@ In order to determine how the aicon is going to be run, we need to see what acti
 What do we want the Aicon to decide from?
 Allocate budget daily for each ads campaign.
 The optima job of the Aicon is to take time as infinite projected time. We could decide this because the decision of taking some step S in the near future t + 1; could eb less optimal that taking step S in later future t + 100; when t is measured in days. But for simplicity of analysis and using a pragmatic point of view instead of a philosophical, we define also a time frame. (Disclaimer, everything should be able to be generated entirely from Aicon; but more on this later)
+
+Action space
+For the budget example above:
+Range = 1000 (max - min)
+Step size = 100
+Number of steps = (1000/100) + 1 = 11 possible values
+This is particularly useful in real-world applications where:
+You need continuous-like behavior (values in a range)
+But practical constraints require discrete steps (like minimum transaction amounts)
+Or computational efficiency requires discretization of the search space
+For example, in advertising budget allocation:
+You might want to allocate budgets between $0 and $1000
+But your ad platform only accepts budgets in $100 increments
+So you use a stepped continuous dimension with step=100
 Tests
 Metrics to understand if this system works properly.
 
