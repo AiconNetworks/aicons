@@ -169,6 +169,12 @@ class BayesBrain:
         # Get posterior samples from perception
         print("\nGetting posterior samples from perception system...")
         posterior_samples = self.get_posterior_samples()
+        
+        # If no posterior samples available, use prior samples
+        if not posterior_samples:
+            print("No posterior samples available, using prior samples...")
+            posterior_samples = self.state.get_prior_samples(num_samples)
+            
         print(f"\nPosterior samples shape: {len(next(iter(posterior_samples.values())))} samples")
         print(f"Posterior sample keys: {list(posterior_samples.keys())}")
         print("\nFirst posterior sample:")
@@ -268,7 +274,7 @@ class BayesBrain:
         print("\nSelecting best action from utilities:")
         for key, util in action_utilities.items():
             print(f"- Action: {dict(key)}, Utility: {util}")
-            
+        
         best_action_key = max(action_utilities.items(), key=lambda x: x[1])[0]
         best_action = dict(best_action_key)
         expected_utility = action_utilities[best_action_key]

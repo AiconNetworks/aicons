@@ -32,22 +32,46 @@ class CostBenefitUtility(UtilityFunction):
             action_space: Optional action space
         """
         super().__init__(name, description, action_space)
+        
+        # Store costs and benefits
         self.costs = costs
         self.benefits = benefits
+        
+        # If action space is provided, ensure costs and benefits match action dimensions
+        if action_space is not None and action_space.dimensions is not None:
+            # Get action names from action space dimensions
+            action_names = [dim.name for dim in action_space.dimensions]
+            
+            # Create ordered lists of costs and benefits matching action space
+            self.costs_list = [costs.get(name, 0.0) for name in action_names]
+            self.benefits_list = [benefits.get(name, 0.0) for name in action_names]
+            
+            # Convert to tensors
+            self.costs_tensor = tf.convert_to_tensor(self.costs_list, dtype=tf.float32)
+            self.benefits_tensor = tf.convert_to_tensor(self.benefits_list, dtype=tf.float32)
     
     def __str__(self) -> str:
         return f"Cost/Benefit Utility: {self.name}\nCosts: {self.costs}\nBenefits: {self.benefits}"
     
     def evaluate_tf(self, action: tf.Tensor, state_samples: Dict[str, tf.Tensor]) -> tf.Tensor:
-        # Convert action tensor to dictionary format
-        action_dict = {dim.name: float(action[i]) for i, dim in enumerate(self.dimensions)}
-        
-        # Get costs and benefits for this action
-        cost = sum(self.costs.get(k, 0.0) for k in action_dict.keys())
-        benefit = sum(self.benefits.get(k, 0.0) for k in action_dict.keys())
-        
-        # Return benefit - cost (higher is better)
-        return tf.constant(benefit - cost)
+        # If we have action space dimensions, use tensor operations
+        if hasattr(self, 'costs_tensor') and hasattr(self, 'benefits_tensor'):
+            # Compute benefit - cost using tensor operations
+            return tf.reduce_sum(action * (self.benefits_tensor - self.costs_tensor))
+        else:
+            # Fallback to dictionary-based computation
+            if hasattr(self, 'dimensions') and self.dimensions is not None:
+                action_dict = {dim.name: float(action[i]) for i, dim in enumerate(self.dimensions)}
+            else:
+                # If no dimensions set, assume action is a single value
+                action_dict = {'umbrella': float(action[0])}
+            
+            # Get costs and benefits for this action
+            cost = sum(self.costs.get(k, 0.0) for k in action_dict.keys())
+            benefit = sum(self.benefits.get(k, 0.0) for k in action_dict.keys())
+            
+            # Return benefit - cost (higher is better)
+            return tf.constant(benefit - cost)
 
 class MonetaryUtility(UtilityFunction):
     """

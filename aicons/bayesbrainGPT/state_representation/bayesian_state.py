@@ -663,6 +663,58 @@ class BayesianState:
             
         return state_factors
 
+    def get_prior_samples(self, num_samples: int = 100) -> Dict[str, np.ndarray]:
+        """
+        Generate samples from the prior distributions for each factor.
+        
+        Args:
+            num_samples: Number of samples to generate
+            
+        Returns:
+            Dictionary mapping factor names to arrays of samples
+        """
+        samples = {}
+        for name, factor in self.factors.items():
+            print(f"\nDEBUG - Factor {name}:")
+            print(f"Type: {type(factor)}")
+            print(f"Dir: {dir(factor)}")
+            print(f"Dict: {factor.__dict__}")
+            
+            if isinstance(factor, ContinuousLatentVariable):
+                # For continuous factors, sample from their distribution
+                if isinstance(factor.tf_distribution, tfp.distributions.Normal):
+                    samples[name] = np.random.normal(
+                        loc=factor.params['loc'],
+                        scale=factor.params['scale'],
+                        size=num_samples
+                    )
+                elif isinstance(factor.tf_distribution, tfp.distributions.TruncatedNormal):
+                    # For truncated normal, we'll use rejection sampling
+                    raw_samples = np.random.normal(
+                        loc=factor.params['loc'],
+                        scale=factor.params['scale'],
+                        size=num_samples * 2  # Generate extra samples for rejection
+                    )
+                    # Apply constraints
+                    mask = (raw_samples >= factor.constraints['lower']) & (raw_samples <= factor.constraints['upper'])
+                    samples[name] = raw_samples[mask][:num_samples]
+                else:
+                    raise ValueError(f"Unsupported distribution type: {type(factor.tf_distribution)}")
+            elif isinstance(factor, DiscreteLatentVariable):
+                # For discrete factors, sample from their probability distribution
+                values = factor.params['values']
+                probs = factor.params.get('probs', np.ones(len(values)) / len(values))
+                samples[name] = np.random.choice(values, size=num_samples, p=probs)
+            elif isinstance(factor, CategoricalLatentVariable):
+                # For categorical factors, sample from their probability distribution
+                categories = factor.params['categories']
+                probs = factor.params.get('probs', np.ones(len(categories)) / len(categories))
+                samples[name] = np.random.choice(categories, size=num_samples, p=probs)
+            else:
+                raise ValueError(f"Unsupported factor type: {type(factor)}")
+        
+        return samples
+
 
 # For backward compatibility with any code that directly imports EnvironmentState
 EnvironmentState = BayesianState

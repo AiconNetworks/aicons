@@ -439,3 +439,217 @@ These validations ensure that:
 3. No circular dependencies can be created
 4. Factor types have appropriate parameters
 5. The system provides clear error messages for debugging
+
+### 6. Common Factor Type Errors
+
+The most common error is trying to access the wrong attribute for factor type checking. Here's how to fix it:
+
+```python
+# WRONG - This will fail
+if factor.type == 'continuous':  # Error: AttributeError: 'ContinuousLatentVariable' has no attribute 'type'
+    # do something
+
+# CORRECT - Use isinstance() instead
+if isinstance(factor, ContinuousLatentVariable):
+    # do something
+```
+
+When you encounter type-related errors, use this debug code to see what's actually available:
+
+```python
+# Print all available attributes and their values
+print(f"\nDEBUG - Factor {name}:")
+print(f"Type: {type(factor)}")
+print(f"Dir: {dir(factor)}")
+print(f"Dict: {factor.__dict__}")
+
+# This will show you:
+# - The actual class type of the factor
+# - All available methods and attributes
+# - The internal dictionary of the factor
+```
+
+The error occurs because the factor objects are actual class instances, not dictionaries. They don't have a 'type' attribute, but you can check their type using Python's `isinstance()` function.
+
+### 7. Distribution Type Checking
+
+Another common error is trying to check distribution types incorrectly:
+
+```python
+# WRONG - This will fail
+if factor.distribution == 'normal':  # Error: AttributeError: 'ContinuousLatentVariable' has no attribute 'distribution'
+    # do something
+
+# CORRECT - Check the tf_distribution attribute
+if isinstance(factor.tf_distribution, tfp.distributions.Normal):
+    # do something
+```
+
+The error occurs because there's a difference between the configuration format and the implementation:
+
+1. **Configuration Format** (when creating factors):
+
+   ```python
+   # We use strings to specify distribution type
+   aicon.add_state_factor(
+       name='market_size',
+       factor_type='continuous',
+       value=10000.0,
+       params={
+           'loc': 10000.0,
+           'scale': 1000.0
+       }
+   )
+   ```
+
+2. **Implementation** (when working with factors):
+   ```python
+   # We work with actual TFP distribution objects
+   if isinstance(factor.tf_distribution, tfp.distributions.Normal):
+       # Handle normal distribution
+   ```
+
+The distribution information is stored in the `tf_distribution` attribute, which is a TensorFlow Probability distribution object. You should use `isinstance()` to check its type:
+
+```python
+import tensorflow_probability as tfp
+
+# For normal distributions
+if isinstance(factor.tf_distribution, tfp.distributions.Normal):
+    # Handle normal distribution
+
+# For truncated normal distributions
+elif isinstance(factor.tf_distribution, tfp.distributions.TruncatedNormal):
+    # Handle truncated normal distribution
+```
+
+## Sampling from State Factors
+
+### 1. Prior Sampling
+
+The system provides a method to generate samples from the prior distributions of all factors:
+
+```python
+# Generate samples from prior distributions
+samples = state.get_prior_samples(num_samples=100)
+
+# The samples dictionary maps factor names to arrays of samples
+for factor_name, factor_samples in samples.items():
+    print(f"{factor_name}: {factor_samples[:5]}")  # Show first 5 samples
+```
+
+The sampling behavior depends on the factor type:
+
+1. **Continuous Factors**
+
+   - For normal distributions: Samples from N(loc, scale)
+   - For truncated normal: Uses rejection sampling to respect bounds
+
+   ```python
+   # Example: Sampling from a continuous factor
+   samples = state.get_prior_samples(num_samples=100)
+   market_size_samples = samples['market_size']  # Array of 100 samples
+   ```
+
+2. **Discrete Factors**
+
+   - For categorical-like: Samples from discrete probability distribution
+   - For Poisson: Samples from Poisson(rate)
+
+   ```python
+   # Example: Sampling from a discrete factor
+   samples = state.get_prior_samples(num_samples=100)
+   num_competitors_samples = samples['num_competitors']  # Array of 100 samples
+   ```
+
+3. **Categorical Factors**
+   - Samples from categorical probability distribution
+   ```python
+   # Example: Sampling from a categorical factor
+   samples = state.get_prior_samples(num_samples=100)
+   competition_level_samples = samples['competition_level']  # Array of 100 samples
+   ```
+
+### 2. Debug Information
+
+The sampling method includes debug information to help understand factor properties:
+
+```python
+# When sampling, debug info is printed for each factor
+samples = state.get_prior_samples(num_samples=100)
+
+# Debug output shows:
+# - Factor name
+# - Factor type
+# - Available attributes (dir)
+# - Factor dictionary (__dict__)
+```
+
+This debug information is particularly useful when:
+
+- Troubleshooting sampling issues
+- Understanding factor structure
+- Verifying parameter values
+- Checking factor relationships
+
+### 3. Error Handling
+
+The sampling method includes error handling for:
+
+- Unsupported distribution types
+- Invalid factor types
+- Missing required parameters
+- Constraint violations
+
+```python
+try:
+    samples = state.get_prior_samples(num_samples=100)
+except ValueError as e:
+    print(f"Sampling error: {e}")
+```
+
+### 4. Common Use Cases
+
+1. **Monte Carlo Simulation**
+
+   ```python
+   # Generate samples for Monte Carlo analysis
+   samples = state.get_prior_samples(num_samples=1000)
+
+   # Analyze samples
+   for factor_name, factor_samples in samples.items():
+       mean = np.mean(factor_samples)
+       std = np.std(factor_samples)
+       print(f"{factor_name}: mean={mean:.2f}, std={std:.2f}")
+   ```
+
+2. **Sensitivity Analysis**
+
+   ```python
+   # Generate samples to analyze factor sensitivity
+   samples = state.get_prior_samples(num_samples=100)
+
+   # Calculate correlations between factors
+   factor_names = list(samples.keys())
+   sample_matrix = np.column_stack([samples[name] for name in factor_names])
+   correlations = np.corrcoef(sample_matrix.T)
+
+   # Print correlation matrix
+   for i, name1 in enumerate(factor_names):
+       for j, name2 in enumerate(factor_names):
+           print(f"{name1}-{name2}: {correlations[i,j]:.2f}")
+   ```
+
+3. **Prior Visualization**
+
+   ```python
+   # Generate samples for prior visualization
+   samples = state.get_prior_samples(num_samples=1000)
+
+   # Plot histograms for continuous factors
+   for factor_name, factor_samples in samples.items():
+       if isinstance(factor_samples[0], (int, float)):
+           plt.hist(factor_samples, bins=30)
+           plt.title(f"{factor_name} Prior Distribution")
+           plt.show()
+   ```
