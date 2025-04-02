@@ -22,7 +22,9 @@ from datetime import datetime
 from ..bayesbrainGPT.bayes_brain_ref import BayesBrain
 from ..bayesbrainGPT.decision_making.action_space import (
     ActionSpace,
-    ActionDimension,
+    ActionDimension
+)
+from ..bayesbrainGPT.decision_making.marketing_action_spaces import (
     create_budget_allocation_space,
     create_time_budget_allocation_space,
     create_multi_campaign_action_space,

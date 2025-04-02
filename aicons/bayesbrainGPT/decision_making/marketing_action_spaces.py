@@ -1,8 +1,8 @@
 """
-Marketing-specific action spaces for BayesBrainGPT.
+Marketing Action Spaces Module for BayesBrainGPT
 
 This module provides specialized action spaces for marketing optimization,
-such as budget allocation across ads and campaigns.
+building on top of the core action space functionality.
 """
 
 from typing import List, Dict, Any, Optional
@@ -166,5 +166,55 @@ def create_multi_campaign_action_space(
     
     action_space = ActionSpace(dimensions, constraints=[budget_sum_constraint] + constraints)
     # Store total_budget as an attribute
+    action_space.total_budget = total_budget
+    return action_space
+
+
+def create_marketing_ads_space(
+    total_budget: float, 
+    num_ads: int, 
+    budget_step: float = 100.0, 
+    min_budget: float = 0.0,
+    ad_names: Optional[List[str]] = None
+) -> ActionSpace:
+    """
+    Create an action space for allocating budget across marketing ads.
+    
+    Args:
+        total_budget: Total budget to allocate
+        num_ads: Number of ads to allocate budget to
+        budget_step: Step size for budget allocation
+        min_budget: Minimum budget per ad
+        ad_names: Optional list of ad names to use for dimension names
+            
+    Returns:
+        ActionSpace for marketing budget allocation
+    """
+    # Create dimensions for each ad's budget
+    dimensions = []
+    
+    for i in range(num_ads):
+        # Use provided ad names if available, otherwise use default names
+        if ad_names and i < len(ad_names):
+            name = f"{ad_names[i]}_budget"
+        else:
+            name = f"ad_{i+1}_budget"
+            
+        dimensions.append(
+            ActionDimension(
+                name=name,
+                dim_type="continuous",
+                min_value=min_budget,
+                max_value=total_budget,
+                step=budget_step
+            )
+        )
+    
+    # Add constraint that budgets must sum to total_budget
+    def budget_sum_constraint(action, tolerance=0.0):
+        return np.isclose(sum(action.values()), total_budget, rtol=tolerance)
+    
+    action_space = ActionSpace(dimensions, constraints=[budget_sum_constraint])
+    # Store total_budget as an attribute for reference
     action_space.total_budget = total_budget
     return action_space 
