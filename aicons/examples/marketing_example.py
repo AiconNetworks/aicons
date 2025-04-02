@@ -17,6 +17,7 @@ sys.path.append(str(project_root))
 # Import the required classes
 from aicons.definitions.aicon import AIcon
 from aicons.bayesbrainGPT.sensors.meta_s.meta_ads_sales_sensor import MetaAdsSalesSensor
+from aicons.bayesbrainGPT.decision_making.marketing_action_spaces import create_budget_allocation_space
 
 def main():
     # Create AIcon
@@ -85,13 +86,13 @@ def main():
     print("Meta Ads sensor added")
 
     # Define action space
-    aicon.define_action_space(
-        space_type='marketing',
+    action_space = create_budget_allocation_space(
         total_budget=1000.0,
         num_ads=2,
         budget_step=100.0,
         ad_names=['google', 'facebook']
     )
+    aicon.brain.action_space = action_space
 
     # Define utility function
     aicon.define_utility_function(

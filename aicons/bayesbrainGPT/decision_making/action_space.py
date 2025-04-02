@@ -35,7 +35,7 @@ class ActionDimension:
         Initialize a dimension of the action space.
         
         Args:
-            name: Name of the dimension (e.g., 'ad1_budget', 'day_of_week')
+            name: Name of the dimension
             dim_type: Type of dimension - 'discrete' or 'continuous'
             values: For discrete dimensions, the possible values
             min_value: For continuous dimensions, the minimum value
@@ -132,8 +132,7 @@ class ActionSpace:
     """
     Multi-dimensional action space for Bayesian decision making.
     
-    Can represent complex action spaces with multiple interacting dimensions,
-    such as budget allocations across multiple ads, time periods, etc.
+    Can represent complex action spaces with multiple interacting dimensions.
     """
     
     def __init__(self, dimensions: List[ActionDimension], constraints: Optional[List[callable]] = None):
@@ -173,59 +172,7 @@ class ActionSpace:
         if self.is_discrete:
             return {dim.name: dim.sample() for dim in self.dimensions}
         
-        # Check if this is a budget allocation space
-        is_budget_space = (
-            hasattr(self, "total_budget") and 
-            any("budget" in dim.name for dim in self.dimensions)
-        )
-        
-        if is_budget_space:
-            # For budget allocation, use a special sampling method
-            budget_dims = [dim for dim in self.dimensions if "budget" in dim.name]
-            total_budget = self.total_budget
-            
-            # Get min budget for each dimension (or 0)
-            min_budgets = {dim.name: getattr(dim, "min_value", 0.0) for dim in budget_dims}
-            
-            # Calculate remaining budget after minimum allocations
-            allocated_min = sum(min_budgets.values())
-            remaining_budget = max(0, total_budget - allocated_min)
-            
-            # Generate random weights for remaining budget
-            weights = np.random.random(len(budget_dims))
-            weights_sum = np.sum(weights)
-            
-            if weights_sum > 0:
-                # Normalize weights to sum to 1
-                normalized_weights = weights / weights_sum
-                
-                # Allocate remaining budget proportionally
-                action = {}
-                for i, dim in enumerate(budget_dims):
-                    # Allocate min budget plus weighted portion of remaining
-                    action[dim.name] = min_budgets[dim.name] + normalized_weights[i] * remaining_budget
-                    
-                    # Round to step size if present
-                    if hasattr(dim, "step") and dim.step is not None:
-                        steps = round(action[dim.name] / dim.step)
-                        action[dim.name] = steps * dim.step
-                
-                # Handle non-budget dimensions
-                for dim in self.dimensions:
-                    if dim.name not in action:
-                        action[dim.name] = dim.sample()
-                
-                # Ensure budget sums to exact total (adjust largest allocation)
-                budget_sum = sum(action[dim.name] for dim in budget_dims)
-                if abs(budget_sum - total_budget) > 0.01:
-                    # Find dimension with largest allocation
-                    largest_dim = max(budget_dims, key=lambda d: action[d.name])
-                    # Adjust to make sum exact
-                    action[largest_dim.name] += (total_budget - budget_sum)
-                
-                return action
-        
-        # For other continuous spaces with constraints, use rejection sampling
+        # For continuous spaces with constraints, use rejection sampling
         max_attempts = 100
         
         for _ in range(max_attempts):
@@ -262,7 +209,7 @@ class ActionSpace:
             if not dimension.contains(value):
                 return False
         
-        # Check constraints with a small tolerance for budget constraints
+        # Check constraints with a small tolerance
         return self._check_constraints(action, tolerance=0.01)
     
     def _check_constraints(self, action, tolerance=0.0):
@@ -271,21 +218,14 @@ class ActionSpace:
         
         Args:
             action: Dict mapping dimension names to values
-            tolerance: Optional tolerance for budget constraints
+            tolerance: Optional tolerance for constraints
             
         Returns:
             bool: True if all constraints are satisfied
         """
         for constraint in self.constraints:
-            # For budget allocation, use a small tolerance to increase chances of finding valid samples
-            if "budget" in constraint.__name__.lower() or "sum" in constraint.__name__.lower():
-                # Use specified tolerance for budget constraints
-                if not constraint(action, tolerance=tolerance):
-                    return False
-            else:
-                # Regular constraint check without tolerance
-                if not constraint(action):
-                    return False
+            if not constraint(action, tolerance=tolerance):
+                return False
         return True
     
     def enumerate_actions(self, max_actions: Optional[int] = None) -> List[Dict[str, Any]]:
@@ -423,7 +363,6 @@ class ActionSpace:
             action_tensor = tf.constant([action[dim.name] for dim in self.dimensions])
             
             # Calculate utilities across all samples (vectorized)
-            # Assuming utility_fn can handle batched inputs
             utilities = utility_fn(action_tensor, posterior_samples)
             
             # Calculate expected utility (mean across samples)
@@ -504,10 +443,6 @@ class ActionSpace:
                     dim.min_value,
                     dim.max_value
                 ))
-        
-        # For budget constraints, we could implement projection here
-        # This is a simplified implementation - would need customization
-        # for specific constraint types
 
     def get_dimensions_info(self) -> Dict[str, Any]:
         """
@@ -518,45 +453,13 @@ class ActionSpace:
             - num_dimensions: Number of dimensions
             - dimension_names: List of dimension names
             - dimension_types: List of dimension types
-            - item_ids: List of item IDs if available
-            - ad_names: Dictionary of ad names if available
         """
-        # Basic dimension information
-        dimensions_info = {
+        return {
             "num_dimensions": len(self.dimensions),
             "dimension_names": [dim.name for dim in self.dimensions],
             "dimension_types": [dim.dim_type for dim in self.dimensions],
         }
-        
-        # Add information about item IDs if available
-        if hasattr(self, 'item_ids'):
-            dimensions_info["item_ids"] = self.item_ids
-            
-        # Add information about ad names if available
-        if hasattr(self, 'ad_names'):
-            dimensions_info["ad_names"] = self.ad_names
-            
-        return dimensions_info
 
-    @staticmethod
-    def print_space(action_space: 'ActionSpace', format: str = 'human') -> str:
-        """
-        Print an action space in the specified format.
-        
-        Args:
-            action_space: The action space to print
-            format: 'human' for human-readable format, 'math' for mathematical format
-            
-        Returns:
-            A formatted string representation of the action space
-        """
-        if format == 'human':
-            return action_space.pprint()
-        elif format == 'math':
-            return action_space.raw_print()
-        else:
-            return str(action_space)
-    
     def pprint(self) -> str:
         """
         Pretty print the action space in a human-readable format.
@@ -589,22 +492,9 @@ class ActionSpace:
                 output.append(f"\nConstraint {i}:")
                 if isinstance(constraint, dict):
                     output.append(f"Type: {constraint.get('type', 'unknown')}")
-                    if constraint.get('type') == 'sum':
-                        output.append(f"Dimensions: {constraint.get('dimensions', [])}")
-                        output.append(f"Target sum: {constraint.get('value', 0.0)}")
-                    elif constraint.get('type') == 'ratio':
-                        output.append(f"Dimensions: {constraint.get('dimension1')} / {constraint.get('dimension2')}")
-                        output.append(f"Ratio range: [{constraint.get('min_ratio', 0.0)}, {constraint.get('max_ratio', float('inf'))}]")
                 else:
                     output.append(f"Type: Function")
                     output.append(f"Description: {constraint.__doc__ or 'No description available'}")
-        
-        # Print all possible combinations
-        output.append("\nAll Possible Combinations:")
-        output.append("-" * 30)
-        all_actions = self.enumerate_actions()
-        for action in all_actions:
-            output.append(f"Action: {action}")
         
         return "\n".join(output)
     
@@ -650,10 +540,6 @@ class ActionSpace:
                 constraints.append(str(constraint))
         
         output.append(f"constraints: {constraints}")
-        
-        # Print all possible combinations
-        all_actions = self.enumerate_actions()
-        output.append(f"actions: {all_actions}")
         
         return "\n".join(output)
     
