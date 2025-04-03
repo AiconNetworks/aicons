@@ -160,6 +160,9 @@ class BayesBrain:
         Returns:
             Tuple of (best_action, expected_utility)
         """
+        start_time = time.time()
+        print("\n=== Starting find_best_action ===")
+        
         if not self.action_space or not self.utility_function:
             raise ValueError("Action space and utility function must be set before finding best action")
             
@@ -168,12 +171,34 @@ class BayesBrain:
         if not posterior_samples:
             posterior_samples = self.state.get_prior_samples(num_samples)
         
-        # Convert posterior samples to tensors
-        posterior_tensors = {k: tf.constant(v) for k, v in posterior_samples.items()}
+        # Print sample statistics
+        print("\nPosterior Sample Statistics:")
+        for name, samples in posterior_samples.items():
+            if isinstance(samples, np.ndarray):
+                print(f"- {name}:")
+                print(f"  Shape: {samples.shape}")
+                print(f"  Mean: {np.mean(samples):.3f}")
+                print(f"  Std: {np.std(samples):.3f}")
+                print(f"  Min: {np.min(samples):.3f}")
+                print(f"  Max: {np.max(samples):.3f}")
+            else:
+                print(f"- {name}: {samples}")
+        
+        # Convert posterior samples to tensors with proper shape
+        posterior_tensors = {}
+        for name, samples in posterior_samples.items():
+            if isinstance(samples, np.ndarray):
+                # Ensure samples are float32 and have the correct shape
+                posterior_tensors[name] = tf.constant(samples, dtype=tf.float32)
+            else:
+                # For scalar values, create a tensor with the same shape as other samples
+                sample_shape = next(iter(posterior_tensors.values())).shape if posterior_tensors else (1,)
+                posterior_tensors[name] = tf.fill(sample_shape, float(samples))
         
         # Get all possible actions from action space dimensions
         possible_actions = self.action_space.enumerate_actions()
         total_actions = len(possible_actions)
+        print(f"\nFound {total_actions} possible actions to evaluate")
         
         # Initialize action utilities dictionary
         action_utilities = {}
@@ -197,10 +222,12 @@ class BayesBrain:
             if hasattr(self.utility_function, 'dimensions') and self.utility_function.dimensions is not None:
                 action_tensor = tf.constant([action_float32.get(dim.name, 0.0) for dim in self.utility_function.dimensions])
             else:
+                # Try to identify budget values from keys
                 budget_values = [v for k, v in action_float32.items() if k.endswith('_budget')]
                 if budget_values:
                     action_tensor = tf.constant(budget_values)
                 else:
+                    # Fallback to all numeric values in the action
                     numeric_values = [v for k, v in action_float32.items() 
                                      if isinstance(v, (int, float))]
                     action_tensor = tf.constant(numeric_values) if numeric_values else tf.constant([0.0])
@@ -217,11 +244,18 @@ class BayesBrain:
             if utility > best_utility:
                 best_utility = utility
                 best_action = action
+                print(f"\nNew best action found with utility {utility:.2f}")
         
-        print()  # New line after progress bar
+        end_time = time.time()
+        print(f"\n\nTotal time taken: {end_time - start_time:.2f} seconds")
         
         if best_action is None:
+            print("WARNING: No valid actions found!")
             return None, float('-inf')
+        
+        print("\n=== Best Action Selected ===")
+        print(f"Action: {best_action}")
+        print(f"Expected utility: {best_utility}")
         
         return best_action, best_utility
     
@@ -236,16 +270,23 @@ class BayesBrain:
         Returns:
             Dictionary mapping action keys to their expected utilities
         """
+        print("\n=== Debug: compute_action_utilities ===")
+        print(f"Input state: {state}")
+        
         action_utilities = {}
         
         # Get posterior samples once for all actions
         posterior_samples = self.get_posterior_samples(num_samples)
+        print(f"\nPosterior samples: {posterior_samples}")
         
         # Get all possible actions from action space dimensions
         possible_actions = self.action_space.enumerate_actions()
+        print(f"\nEvaluating {len(possible_actions)} possible actions")
         
         # Evaluate each possible action
         for action in possible_actions:
+            print(f"\nProcessing action: {action}")
+            
             # Create a single sample dictionary with current values
             sample = {}
             for name, samples in posterior_samples.items():
@@ -256,14 +297,20 @@ class BayesBrain:
                     # If it's a scalar value, use it directly
                     sample[name] = float(samples)
             
+            print(f"\nFinal sample dictionary: {sample}")
+            
             # Use evaluate method
             try:
                 utility = self.utility_function.evaluate(action, sample)
+                print(f"Computed utility: {utility}")
                 # Convert action to tuple for use as key
                 action_key = tuple(sorted(action.items()))
                 action_utilities[action_key] = utility
             except Exception as e:
-                raise ValueError(f"Error computing utility: {str(e)}")
+                print(f"Error computing utility: {str(e)}")
+                print(f"Action type: {type(action)}")
+                print(f"Sample type: {type(sample)}")
+                raise
             
         return action_utilities
     

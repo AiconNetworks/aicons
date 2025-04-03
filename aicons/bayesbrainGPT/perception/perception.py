@@ -197,6 +197,7 @@ class BayesianPerception:
         """
         # If no observations provided, just sample from prior
         if not observations:
+            print("\nNo posterior information available, using prior distributions")
             joint_dist = self.create_joint_prior()
             samples = joint_dist.sample(1000)  # Sample 1000 times from prior
             
@@ -496,6 +497,14 @@ class BayesianPerception:
             
             # Process and store posterior samples
             acceptance_rate = tf.reduce_mean(tf.cast(is_accepted, tf.float32))
+            print(f"\nHMC Acceptance Rate: {acceptance_rate:.2%}")
+            
+            # Print HMC diagnostics
+            print("\nHMC Diagnostics:")
+            print(f"Number of results: {num_results}")
+            print(f"Number of burnin steps: {num_burnin_steps}")
+            print(f"Step size: {step_size}")
+            print(f"Number of leapfrog steps: {num_leapfrog_steps}")
             
             # Convert samples to dictionary format
             self.posterior_samples = {}
