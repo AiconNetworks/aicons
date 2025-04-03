@@ -484,6 +484,14 @@ class ZeroAIcon:
         
         return response.text
         
+    def get_action_space_text(self) -> str:
+        """Get the actual text content of the action space from the window context."""
+        if not self.brain.action_space:
+            return "No action space defined"
+        
+        # Use the raw_print method from ActionSpace
+        return self.brain.action_space.raw_print()
+
     def get_token_usage_report(self) -> Dict[str, Any]:
         """Get a report of token usage across components."""
         return {
@@ -492,5 +500,6 @@ class ZeroAIcon:
             "action_space": self.token_usage["action_space"],
             "inference": self.token_usage["inference"],
             "total_used": sum(self.token_usage.values()),
-            "remaining": self.context_window - sum(self.token_usage.values())
+            "remaining": self.context_window_size - sum(self.token_usage.values()),
+            "action_space_text": self.get_action_space_text()  # Add the actual text content
         } 
