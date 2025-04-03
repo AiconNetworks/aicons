@@ -156,13 +156,18 @@ class AIcon(ABC):
             The created latent variable
         """
         # Delegate to brain's state
-        return self.brain.state.add_factor(
+        factor = self.brain.state.add_factor(
             name=name,
             factor_type=factor_type,
             value=value,
             params=params,
             relationships=relationships
         )
+        
+        # Verify that the returned factor is a LatentVariable
+        assert isinstance(factor, LatentVariable), f"Expected LatentVariable, got {type(factor)}"
+        
+        return factor
     
     def get_state_factors(self) -> Dict[str, Any]:
         """
