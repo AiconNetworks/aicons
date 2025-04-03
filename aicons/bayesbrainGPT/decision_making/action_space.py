@@ -238,50 +238,65 @@ class ActionSpace:
         Returns:
             List of action dictionaries
         """
-        if not self.is_discrete:
-            # If space has continuous dimensions with step size, enumerate all possible combinations
-            if all(hasattr(dim, 'step') and dim.step is not None for dim in self.dimensions):
-                # Calculate total number of possible combinations
-                total_combinations = 1
-                for dim in self.dimensions:
+        # Check if all dimensions are either discrete or stepped continuous
+        all_stepped = all(
+            (dim.dim_type == 'discrete') or 
+            (dim.dim_type == 'continuous' and dim.step is not None)
+            for dim in self.dimensions
+        )
+        
+        if all_stepped:
+            # For stepped spaces, treat as discrete
+            # Calculate total number of possible combinations
+            total_combinations = 1
+            for dim in self.dimensions:
+                if dim.dim_type == 'discrete':
+                    total_combinations *= dim.size
+                else:  # stepped continuous
                     num_steps = int((dim.max_value - dim.min_value) / dim.step) + 1
                     total_combinations *= num_steps
-                
-                # If max_actions is None or total combinations is less than max_actions,
-                # enumerate all combinations
-                if max_actions is None or total_combinations <= max_actions:
-                    actions = []
-                    # Generate all possible combinations of values
-                    for values in itertools.product(*[
-                        np.arange(dim.min_value, dim.max_value + dim.step, dim.step)
-                        for dim in self.dimensions
-                    ]):
-                        action = {dim.name: value for dim, value in zip(self.dimensions, values)}
-                        # Check if action satisfies all constraints
-                        if self._check_constraints(action):
-                            actions.append(action)
-                    return actions
-                else:
-                    # For large spaces, sample randomly
-                    return [self.sample() for _ in range(max_actions)]
+            
+            # If max_actions is None or total combinations is less than max_actions,
+            # enumerate all combinations
+            if max_actions is None or total_combinations <= max_actions:
+                actions = []
+                # Generate all possible combinations of values
+                for values in itertools.product(*[
+                    dim.values if dim.dim_type == 'discrete' 
+                    else np.arange(dim.min_value, dim.max_value + dim.step, dim.step)
+                    for dim in self.dimensions
+                ]):
+                    action = {dim.name: value for dim, value in zip(self.dimensions, values)}
+                    if self._check_constraints(action):
+                        actions.append(action)
+                return actions
             else:
-                # For truly continuous spaces, sample randomly
-                if max_actions is None:
-                    max_actions = 1000  # Default to 1000 samples for continuous spaces
+                # For large spaces, sample randomly
                 return [self.sample() for _ in range(max_actions)]
         
-        # For discrete spaces, enumerate all possible combinations
-        if max_actions is None or self.size <= max_actions:
-            # Generate all possible combinations
-            actions = []
-            for values in itertools.product(*[dim.values for dim in self.dimensions]):
-                action = {dim.name: value for dim, value in zip(self.dimensions, values)}
-                if self._check_constraints(action):
-                    actions.append(action)
-            return actions
-        else:
-            # For large discrete spaces, sample randomly
-            return [self.sample() for _ in range(max_actions)]
+        # For truly continuous spaces (no steps), use sampling
+        if max_actions is None:
+            max_actions = 1000  # Default to 1000 samples for continuous spaces
+        
+        # Use rejection sampling to get valid actions
+        actions = []
+        max_attempts = max_actions * 2  # Allow some failed attempts
+        
+        for _ in range(max_attempts):
+            if len(actions) >= max_actions:
+                break
+            
+            # Sample each dimension
+            action = {dim.name: dim.sample() for dim in self.dimensions}
+            
+            # Check if action satisfies all constraints
+            if self._check_constraints(action):
+                actions.append(action)
+        
+        if not actions:
+            raise ValueError("Could not find any valid actions after sampling")
+        
+        return actions
     
     def evaluate_actions(self, utility_fn: Callable[[Dict[str, Any], Dict[str, Any]], float], 
                         posterior_samples: Dict[str, np.ndarray], 

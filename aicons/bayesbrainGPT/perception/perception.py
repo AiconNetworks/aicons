@@ -197,7 +197,6 @@ class BayesianPerception:
         """
         # If no observations provided, just sample from prior
         if not observations:
-            print("\nNo posterior information available, using prior distributions")
             joint_dist = self.create_joint_prior()
             samples = joint_dist.sample(1000)  # Sample 1000 times from prior
             

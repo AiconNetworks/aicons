@@ -50,13 +50,59 @@ def create_budget_allocation_space(
             )
         )
     
-    # Add constraint that budgets must sum to total_budget
-    def budget_sum_constraint(action, tolerance=0.0):
-        return np.isclose(sum(action.values()), total_budget, rtol=tolerance)
+    # Pre-compute valid budget combinations
+    def find_valid_combinations():
+        # Convert to units of budget_step
+        total_units = int(total_budget / budget_step)
+        min_units = int(min_budget / budget_step)
+        
+        # Initialize list to store valid combinations
+        valid_combinations = []
+        
+        # Helper function to generate combinations recursively
+        def generate_combinations(current, remaining_units, remaining_ads):
+            if remaining_ads == 1:
+                # Last ad gets all remaining units
+                if min_units <= remaining_units <= total_units:
+                    valid_combinations.append(current + [remaining_units])
+            else:
+                # Try all possible allocations for current ad
+                for units in range(min_units, min(remaining_units + 1, total_units + 1)):
+                    generate_combinations(
+                        current + [units],
+                        remaining_units - units,
+                        remaining_ads - 1
+                    )
+        
+        # Start generating combinations
+        generate_combinations([], total_units, num_ads)
+        
+        # Convert back to actual budget values
+        return [
+            {dim.name: units * budget_step for dim, units in zip(dimensions, combo)}
+            for combo in valid_combinations
+        ]
     
-    action_space = ActionSpace(dimensions, constraints=[budget_sum_constraint])
+    # Get all valid combinations
+    valid_actions = find_valid_combinations()
+    
+    # Create a custom enumerate_actions method that returns pre-computed combinations
+    def custom_enumerate_actions(max_actions=None):
+        if max_actions is None or len(valid_actions) <= max_actions:
+            return valid_actions
+        else:
+            # If we need fewer actions, sample from valid combinations
+            return np.random.choice(valid_actions, size=max_actions, replace=False).tolist()
+    
+    # Create action space with custom enumerate_actions
+    action_space = ActionSpace(dimensions, constraints=[])
+    action_space.enumerate_actions = custom_enumerate_actions
+    
     # Store total_budget as an attribute for reference
     action_space.total_budget = total_budget
+    action_space.valid_actions = valid_actions
+    
+    print(f"Created budget allocation space with {len(valid_actions)} valid combinations")
     return action_space
 
 

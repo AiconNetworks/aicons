@@ -16,9 +16,10 @@ class MarketingROIUtility(UtilityFunction):
     """
     Utility function for marketing ROI (Return on Investment).
     
-    This utility function calculates the expected profit from ad spend
-    by modeling sales as a function of budget, conversion rates, and
-    day-specific factors.
+    This utility function calculates the expected profit from ad spend by:
+    1. Decomposing utility into sub-components (impressions, clicks, conversions)
+    2. Aggregating these components with appropriate weights
+    3. Incorporating uncertainty from posterior samples
     """
     
     def __init__(self, revenue_per_sale: float = 10.0, num_ads: int = 2,
@@ -32,11 +33,14 @@ class MarketingROIUtility(UtilityFunction):
             num_ads: Number of ads in the model
             num_days: Number of days to consider
             ad_names: Optional names for the ads
-            weights: Optional weights for different components of the utility
-                (e.g., {'revenue': 1.0, 'cost': 1.0, 'risk': 0.5})
+            weights: Optional weights for different components of the utility:
+                - 'impressions': Weight for impression-based utility
+                - 'clicks': Weight for click-based utility
+                - 'conversions': Weight for conversion-based utility
+                - 'cost': Weight for cost component
+                - 'risk': Weight for risk/variance penalty
             action_space: Optional action space to connect with this utility
         """
-        # Initialize parent class
         super().__init__(
             name="Marketing ROI Utility", 
             description="Calculates expected profit from ad spend",
@@ -48,11 +52,13 @@ class MarketingROIUtility(UtilityFunction):
         self.num_days = num_days
         self.ad_names = ad_names or [f"ad_{i+1}" for i in range(num_ads)]
         
-        # Default weights (can be adjusted to reflect business priorities)
+        # Default weights for different utility components
         self.weights = weights or {
-            'revenue': 1.0,    # Weight for revenue component
-            'cost': 1.0,       # Weight for cost component
-            'risk': 0.0        # Weight for risk/variance penalty
+            'impressions': 0.2,    # Weight for impression-based utility
+            'clicks': 0.3,         # Weight for click-based utility
+            'conversions': 0.4,    # Weight for conversion-based utility
+            'cost': 1.0,          # Weight for cost component
+            'risk': 0.1           # Weight for risk/variance penalty
         }
     
     def __str__(self) -> str:
@@ -65,35 +71,13 @@ class MarketingROIUtility(UtilityFunction):
         
         Args:
             action: Dictionary with budget allocations for each ad
-            state_sample: Dictionary with conversion rates, CPCs, and day factors
-                - Expected keys: 'phi' (conversion rates), 'c' (CPCs), 'delta' (day factors)
-                - Or individual factors like 'conversion_rate_ad1', 'cost_per_click_ad1', etc.
+            state_sample: Dictionary with Meta Ads metrics for each ad
+                - Expected keys: purchases, clicks, spend, impressions for each ad
+                - Example: ad_120218905466570217_purchases, ad_120218905466570217_clicks, etc.
         
         Returns:
             float: Utility value representing expected profit
         """
-        # Check if we have vector parameters or individual factors
-        if 'phi' in state_sample:
-            # Vector parameters
-            phi = state_sample.get('phi', np.zeros(self.num_ads) + 0.05)  # Conversion rates
-            c = state_sample.get('c', np.zeros(self.num_ads) + 0.7)       # Cost per click
-            delta = state_sample.get('delta', np.ones(self.num_days))     # Day factors
-        else:
-            # Individual factors
-            phi = np.zeros(self.num_ads)
-            c = np.zeros(self.num_ads)
-            delta = np.ones(self.num_days)
-            
-            # Extract conversion rates and costs from individual factors
-            for i, ad_name in enumerate(self.ad_names):
-                # Try different naming patterns
-                phi[i] = state_sample.get(f"conversion_rate_{ad_name}", 
-                                          state_sample.get(f"conv_rate_{ad_name}",
-                                                         state_sample.get(f"cr_{ad_name}", 0.05)))
-                
-                c[i] = state_sample.get(f"cost_per_click_{ad_name}",
-                                        state_sample.get(f"cpc_{ad_name}", 0.7))
-        
         # Initialize total revenue and cost
         total_revenue = 0.0
         total_cost = 0.0
@@ -106,28 +90,43 @@ class MarketingROIUtility(UtilityFunction):
             budget_key = f"{ad_name}_budget"
             ad_budget = action.get(budget_key, 0.0)
             
-            # Daily budget (equal allocation across days)
-            daily_budget = ad_budget / self.num_days
+            # Get metrics for this ad
+            purchases = state_sample.get(f"{ad_name}_purchases", 0.0)
+            clicks = state_sample.get(f"{ad_name}_clicks", 0.0)
+            spend = state_sample.get(f"{ad_name}_spend", 0.0)
+            impressions = state_sample.get(f"{ad_name}_impressions", 0.0)
             
-            # Calculate sales and cost for this ad
-            ad_sales = 0.0
-            for day_idx in range(self.num_days):
-                # Sales = budget * conversion_rate * day_factor
-                day_sales = daily_budget * phi[ad_idx] * delta[day_idx]
-                ad_sales += day_sales
+            # Calculate conversion rate and CPC from historical data
+            # Avoid division by zero
+            if clicks > 0:
+                conversion_rate = purchases / clicks
+                cpc = spend / clicks
+            else:
+                # If no clicks, use default values
+                conversion_rate = 0.05  # 5% default conversion rate
+                cpc = 0.70  # $0.70 default CPC
             
-            # Revenue = sales * revenue_per_sale
-            ad_revenue = ad_sales * self.revenue_per_sale
+            # Calculate expected sales based on budget
+            # Assuming linear scaling of clicks with budget
+            if spend > 0:
+                clicks_per_dollar = clicks / spend
+                expected_clicks = ad_budget * clicks_per_dollar
+            else:
+                # If no spend, use default CTR
+                ctr = 0.02  # 2% default CTR
+                expected_clicks = ad_budget * ctr / cpc
             
-            # Cost = budget * cost_per_click
-            ad_cost = ad_budget * c[ad_idx]
+            # Calculate expected revenue and cost
+            expected_sales = expected_clicks * conversion_rate
+            expected_revenue = expected_sales * self.revenue_per_sale
+            expected_cost = ad_budget
             
             # Add to totals
-            total_revenue += ad_revenue
-            total_cost += ad_cost
+            total_revenue += expected_revenue
+            total_cost += expected_cost
         
         # Calculate utility components
-        weighted_revenue = total_revenue * self.weights['revenue']
+        weighted_revenue = total_revenue * self.weights['conversions']
         weighted_cost = total_cost * self.weights['cost']
         
         # Risk component (could be based on variance or other risk metrics)
@@ -145,41 +144,24 @@ class MarketingROIUtility(UtilityFunction):
         
         Args:
             action: Tensor with budget allocations for each ad
-                - If dimensions were set via set_action_space, action is a tensor of budget values
-                - Otherwise, action should directly contain the budget values in order
-            state_samples: Dictionary with tensors for conversion rates, CPCs, and day factors
-                - Expected keys: 'phi' (conversion rates), 'c' (CPCs), 'delta' (day factors)
+            state_samples: Dictionary with tensors for ad metrics
+                Each tensor should have shape [num_samples]
                 
         Returns:
             Tensor of utility values, one for each posterior sample
         """
-        # Extract state parameters
-        phi = state_samples.get('phi')      # Shape [n_samples, num_ads]
-        c = state_samples.get('c')          # Shape [n_samples, num_ads]
-        delta = state_samples.get('delta')  # Shape [n_samples, num_days]
-        
-        if phi is None or c is None or delta is None:
-            # Use default values if not provided
-            n_samples = next(iter(state_samples.values())).shape[0]
-            if phi is None:
-                phi = tf.ones([n_samples, self.num_ads]) * 0.05
-            if c is None:
-                c = tf.ones([n_samples, self.num_ads]) * 0.7
-            if delta is None:
-                delta = tf.ones([n_samples, self.num_days])
-        
-        # Initialize total revenue and cost
-        total_revenue = 0.0
-        total_cost = 0.0
+        # Initialize utility components
+        total_utility = tf.zeros_like(next(iter(state_samples.values())))
         
         # For each ad
         for ad_idx in range(self.num_ads):
+            ad_name = self.ad_names[ad_idx]
+            
             # Get budget for this ad from the action tensor
-            # If we have dimensions set, the action may be organized differently
             if hasattr(self, 'dimensions') and self.dimensions is not None:
-                # Find the dimension for this ad's budget
+                # Find the dimension matching this ad's budget
                 for i, dim in enumerate(self.dimensions):
-                    if dim.name == f"{self.ad_names[ad_idx]}_budget":
+                    if dim.name == f"{ad_name}_budget":
                         ad_budget = action[i]
                         break
                 else:
@@ -189,42 +171,57 @@ class MarketingROIUtility(UtilityFunction):
                 # Otherwise, assume the action tensor has budgets in order
                 ad_budget = action[ad_idx] if ad_idx < tf.shape(action)[0] else tf.constant(0.0)
             
-            # Daily budget (equal allocation across days)
-            daily_budget = ad_budget / self.num_days
+            # Get posterior samples for this ad's metrics
+            purchases = state_samples.get(f"{ad_name}_purchases", tf.zeros_like(total_utility))
+            clicks = state_samples.get(f"{ad_name}_clicks", tf.zeros_like(total_utility))
+            spend = state_samples.get(f"{ad_name}_spend", tf.zeros_like(total_utility))
+            impressions = state_samples.get(f"{ad_name}_impressions", tf.zeros_like(total_utility))
             
-            # Calculate sales for this ad
-            ad_sales = 0.0
-            for day_idx in range(self.num_days):
-                # Sales = budget * conversion_rate * day_factor
-                day_sales = daily_budget * phi[:, ad_idx] * delta[:, day_idx]
-                ad_sales += day_sales
+            # Calculate metrics from posterior samples
+            # Avoid division by zero
+            ctr = tf.where(
+                impressions > 0,
+                clicks / impressions,
+                tf.constant(0.02, dtype=total_utility.dtype)  # Default 2% CTR
+            )
             
-            # Revenue = sales * revenue_per_sale
-            ad_revenue = ad_sales * self.revenue_per_sale
+            conversion_rate = tf.where(
+                clicks > 0,
+                purchases / clicks,
+                tf.constant(0.05, dtype=total_utility.dtype)  # Default 5% conversion rate
+            )
             
-            # Cost = budget * cost_per_click
-            ad_cost = ad_budget * c[:, ad_idx]
+            cpc = tf.where(
+                clicks > 0,
+                spend / clicks,
+                tf.constant(0.70, dtype=total_utility.dtype)  # Default $0.70 CPC
+            )
             
-            # Add to totals
-            total_revenue += ad_revenue
-            total_cost += ad_cost
-        
-        # Calculate utility components
-        weighted_revenue = total_revenue * self.weights['revenue']
-        weighted_cost = total_cost * self.weights['cost']
-        
-        # Risk component (could use variance or other risk metrics)
-        risk_penalty = 0.0
-        if self.weights['risk'] > 0:
-            # Example: Penalize based on standard deviation of profit
-            profit = weighted_revenue - weighted_cost
-            # Add small epsilon to avoid NaN gradients
+            # Calculate expected metrics based on budget
+            # Scale impressions based on budget relative to historical spend
+            expected_impressions = tf.where(
+                spend > 0,
+                (ad_budget / spend) * impressions,
+                impressions * (ad_budget / 1.0)  # If no spend, use impressions directly
+            )
+            
+            expected_clicks = expected_impressions * ctr
+            expected_sales = expected_clicks * conversion_rate
+            
+            # Calculate utility components
+            impression_utility = self.weights['impressions'] * expected_impressions
+            click_utility = self.weights['clicks'] * expected_clicks
+            conversion_utility = self.weights['conversions'] * expected_sales * self.revenue_per_sale
+            cost_utility = self.weights['cost'] * ad_budget
+            
+            # Calculate risk component (variance of profit)
+            profit = conversion_utility - cost_utility
             risk_penalty = self.weights['risk'] * tf.math.reduce_std(profit + 1e-8)
+            
+            # Add to total utility
+            total_utility += impression_utility + click_utility + conversion_utility - cost_utility - risk_penalty
         
-        # Total utility = revenue - cost - risk_penalty
-        utility = weighted_revenue - weighted_cost - risk_penalty
-        
-        return utility
+        return total_utility
 
 
 class ConstrainedMarketingROI(MarketingROIUtility):
