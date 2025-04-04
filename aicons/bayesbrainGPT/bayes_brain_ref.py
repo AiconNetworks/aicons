@@ -41,6 +41,7 @@ from .state_representation import BayesianState
 from .perception.perception import BayesianPerception
 from .state_representation.latent_variables import ContinuousLatentVariable, CategoricalLatentVariable, DiscreteLatentVariable
 
+
 class BayesBrain:
     """
     A Bayesian decision-making brain that implements core Bayesian functionality.
@@ -71,7 +72,7 @@ class BayesBrain:
         self.description = description
         self.state = BayesianState()
         self.perception = BayesianPerception(self)
-        self.action_space = None
+        self.action_space = ActionSpace([])
         self.utility_function = None
         self.aicon = None
         self.last_action = None
