@@ -132,7 +132,7 @@ class BayesianPerception:
         Returns:
             Log likelihood function
         """
-        state_factors = self.brain.get_state_factors()
+        state_factors = self.brain.state.get_state_factors()
         
         def log_likelihood(**state_values):
             total_ll = 0.0
@@ -195,23 +195,18 @@ class BayesianPerception:
         Returns:
             Dictionary of posterior samples for each factor
         """
-        # If no observations provided, just sample from prior
         if not observations:
             print("\nNo posterior information available, using prior distributions")
             joint_dist = self.create_joint_prior()
-            samples = joint_dist.sample(1000)  # Sample 1000 times from prior
+            samples = joint_dist.sample(1000)
             
-            # Convert samples to dictionary format
             self.posterior_samples = {}
-            state_factors = self.brain.get_state_factors()
+            state_factors = self.brain.state.get_state_factors()
             
-            # Handle both list and dictionary returns from joint_dist.sample()
             if isinstance(samples, list):
-                # If it's a list, convert to dictionary using state factor names
                 for i, name in enumerate(state_factors.keys()):
                     self.posterior_samples[name] = samples[i].numpy()
             else:
-                # If it's already a dictionary
                 self.posterior_samples = {k: v.numpy() for k, v in samples.items()}
             
             return self.posterior_samples
@@ -229,7 +224,7 @@ class BayesianPerception:
         Returns:
             Dictionary of posterior samples for each factor
         """
-        state_factors = self.brain.get_state_factors()
+        state_factors = self.brain.state.get_state_factors()
         
         # Get joint prior distribution using the correct method
         joint_dist = self.create_joint_prior()
@@ -549,7 +544,7 @@ class BayesianPerception:
             print("No posterior samples available")
             return False
             
-        state_factors = self.brain.get_state_factors().copy()
+        state_factors = self.brain.state.get_state_factors().copy()
         updated_factors = state_factors.copy()
         
         print("\nUpdating state factors from posterior:")
@@ -658,7 +653,7 @@ class BayesianPerception:
                     print(f"  {name}: {old_value} -> {new_value} (rate: {new_rate:.2f})")
         
         # Update brain state
-        self.brain.set_state_factors(updated_factors)
+        self.brain.state.set_state_factors(updated_factors)
         return True
     
     def update_from_sensor(self, sensor_name: str, environment=None, factor_mapping=None):
@@ -713,10 +708,12 @@ class BayesianPerception:
             print(f"Mapping observation: {sensor_factor_name} → {state_factor_name}")
             
         # Sample posterior
-        self.sample_posterior(mapped_sensor_data)
+        updated_samples = self.sample_posterior(mapped_sensor_data)
         
-        # Update state
-        return self.update_state_from_posterior()
+        # Update state directly through brain.state
+        self.brain.state.set_posterior_samples(updated_samples)
+        
+        return True
     
     def update_all(self, environment=None):
         """

@@ -273,7 +273,7 @@ class AIcon(ABC):
     
     def get_posterior_samples(self) -> Dict[str, Any]:
         """Get samples from the posterior distribution."""
-        return self.brain.get_posterior_samples()
+        return self.brain.state.get_posterior_samples()
     
     def define_action_space(self, space_type: str, **kwargs) -> ActionSpace:
         """

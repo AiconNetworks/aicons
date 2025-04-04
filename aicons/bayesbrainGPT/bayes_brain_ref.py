@@ -59,37 +59,21 @@ class BayesBrain:
     from the AIcon and providing updated beliefs and decisions.
     """
     
-    def __init__(self, name: str = "BayesBrain", description: str = ""):
+    def __init__(self, name: str = None, description: str = None):
         """
-        Initialize a BayesBrain instance.
+        Initialize the Bayesian brain.
         
         Args:
             name: Name of the brain instance
-            description: Description of this brain's purpose
+            description: Optional description of this brain
         """
         self.name = name
         self.description = description
-        self.id = str(uuid.uuid4())
-        
-        # Core Bayesian components
         self.state = BayesianState()
-        from aicons.bayesbrainGPT.perception.perception import BayesianPerception
         self.perception = BayesianPerception(self)
-        
-        # Components provided by AIcon
-        self.utility_function = None
         self.action_space = None
-        self.aicon = None  # Reference to the AIcon this brain belongs to
-        
-        # Decision making parameters
-        self.decision_params = {
-            "num_samples": 1000,
-            "exploration_rate": 0.1,
-            "optimization_method": "monte_carlo"  # or "gradient"
-        }
-        
-        # Decision making state
-        self.last_decision_time = None
+        self.utility_function = None
+        self.aicon = None
         self.last_action = None
         self.last_utility = None
     
@@ -101,36 +85,6 @@ class BayesBrain:
             aicon: The AIcon instance
         """
         self.aicon = aicon
-    
-    def get_state_factors(self) -> Dict[str, Any]:
-        """
-        Get all state factors from the brain's state.
-        
-        Returns:
-            Dictionary of state factors
-        """
-        return self.state.get_state_factors()
-    
-    def get_state(self) -> Dict[str, Any]:
-        """
-        Get the current state beliefs.
-        
-        Returns:
-            Dictionary of current state beliefs
-        """
-        return self.state.get_beliefs()
-    
-    def get_posterior_samples(self, num_samples: Optional[int] = None) -> Dict[str, Any]:
-        """
-        Get samples from the posterior distribution.
-        
-        Args:
-            num_samples: Number of samples to return. If None, return all available.
-            
-        Returns:
-            Dictionary of posterior samples
-        """
-        return self.state.get_posterior_samples(num_samples)
     
     def find_best_action(self, num_samples: Optional[int] = None) -> Tuple[Optional[Dict[str, Any]], float]:
         """
@@ -149,7 +103,7 @@ class BayesBrain:
             raise ValueError("Action space and utility function must be set before finding best action")
             
         # Get posterior samples from perception
-        posterior_samples = self.get_posterior_samples()
+        posterior_samples = self.state.get_posterior_samples(num_samples)
         if not posterior_samples:
             posterior_samples = self.state.get_prior_samples(num_samples)
         
@@ -255,7 +209,7 @@ class BayesBrain:
         action_utilities = {}
         
         # Get posterior samples once for all actions
-        posterior_samples = self.get_posterior_samples(num_samples)
+        posterior_samples = self.state.get_posterior_samples(num_samples)
         
         # Get all possible actions from action space dimensions
         possible_actions = self.action_space.enumerate_actions()
@@ -578,7 +532,7 @@ class BayesBrain:
         print(f"Current time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
         
         # Get current posterior samples (from time t)
-        current_samples = self.get_posterior_samples()
+        current_samples = self.state.get_posterior_samples()
         if current_samples:
             print(f"Using current posterior as prior (from {self.state.last_posterior_update})")
         
@@ -591,7 +545,7 @@ class BayesBrain:
             updated_samples = self.perception.sample_posterior(new_sensor_data)
             
             # Store new posterior samples (time t+1) in brain
-            self.set_posterior_samples(updated_samples)
+            self.state.set_posterior_samples(updated_samples)
             
             # Record update in history
             self.state.update_history.append({
@@ -618,15 +572,6 @@ class BayesBrain:
             True if update was successful
         """
         return self.perception.update_all(environment)
-    
-    def set_posterior_samples(self, samples: Dict[str, Any]):
-        """
-        Set the posterior samples directly.
-        
-        Args:
-            samples: Dictionary of posterior samples with factor information
-        """
-        self.state.set_posterior_samples(samples)
     
     def _load_saved_state(self):
         """Load saved state from file if available."""
