@@ -34,107 +34,24 @@ class BayesianState:
     
     Can be initialized from:
     1. Configuration-based priors
-    2. LLM-derived latent variables
-    3. Manual latent variable addition
+    2. Manual latent variable addition
     """
-    def __init__(self, latent_config=None, use_llm=False, mock_llm=True):
+    def __init__(self):
         """
         Initialize a Bayesian state with latent variables.
         
         Args:
             latent_config: Configuration for latent variables
-            use_llm: Whether to use LLM for initialization
-            mock_llm: Whether to use mock LLM data
         """
         self.factors = {}
         self.hierarchical_relations = {}
         self.conditional_distributions = {}
         self.topological_order = []
-        
-        # Initialize from config or LLM
-        if use_llm:
-            if mock_llm:
-                mock_file = Path(__file__).parent / "llm_state_mkt.txt"
-                with open(mock_file, 'r') as f:
-                    llm_factors = json.load(f)
-                self._initialize_from_llm_data(llm_factors)
-            else:
-                from ..llm_integration import fetch_state_context_from_llm
-                llm_factors = fetch_state_context_from_llm("Get current marketing state factors")
-                self._initialize_from_llm_data(llm_factors)
-        elif latent_config:
-            self._initialize_from_config(latent_config)
-        
-        # For hierarchical generative models
         self.prior_distributions = {}  # TFP distributions for each latent variable
         self.conditional_distributions = {}  # Functions that return conditional distributions
         self.topological_order = []  # Ordering of factors for joint distribution
     
-    def _initialize_from_llm_data(self, llm_factors):
-        """
-        Initialize latent variables from LLM-derived data.
-        
-        Args:
-            llm_factors: List of factor data from LLM
-        """
-        for factor in llm_factors:
-            name = factor.get("description", "").lower().replace(" ", "_")
-            if factor["type"] == "continuous":
-                self.factors[name] = ContinuousLatentVariable(
-                    name=name,
-                    initial_value=float(factor["value"]),
-                    description=factor["description"]
-                )
-            elif factor["type"] == "categorical":
-                self.factors[name] = CategoricalLatentVariable(
-                    name=name,
-                    initial_value=factor["value"],
-                    description=factor["description"]
-                )
-            elif factor["type"] == "discrete":
-                self.factors[name] = DiscreteLatentVariable(
-                    name=name,
-                    initial_value=int(float(factor["value"])),
-                    description=factor["description"]
-                )
 
-    def _initialize_from_config(self, config):
-        """
-        Initialize latent variables from configuration dictionary.
-        
-        Args:
-            config: Dictionary of latent variable configurations
-        """
-        for name, factor_config in config.items():
-            if factor_config["type"] == "continuous":
-                self.factors[name] = ContinuousLatentVariable(
-                    name=name,
-                    initial_value=factor_config["value"],
-                    description=factor_config["description"],
-                    relationships=factor_config.get("relationships", {})
-                )
-            elif factor_config["type"] == "categorical":
-                self.factors[name] = CategoricalLatentVariable(
-                    name=name,
-                    initial_value=factor_config["value"],
-                    description=factor_config["description"],
-                    relationships=factor_config.get("relationships", {}),
-                    possible_values=factor_config.get("possible_values", None)
-                )
-            elif factor_config["type"] == "discrete":
-                self.factors[name] = DiscreteLatentVariable(
-                    name=name,
-                    initial_value=factor_config["value"],
-                    description=factor_config["description"]
-                )
-            elif factor_config["type"] == "bayesian_linear":
-                self.factors[name] = HierarchicalLatentVariable(
-                    name=name,
-                    parents=factor_config["explanatory_vars"],
-                    parameters=factor_config["theta_prior"],
-                    uncertainty=factor_config["variance"],
-                    description=factor_config["description"]
-                )
 
     def __str__(self):
         """String representation of the state"""
@@ -709,9 +626,3 @@ class BayesianState:
                 raise ValueError(f"Unsupported factor type: {type(factor)}")
         
         return samples
-
-
-# For backward compatibility with any code that directly imports EnvironmentState
-EnvironmentState = BayesianState
-# Ensure exports include both classes
-__all__ = ['BayesianState', 'EnvironmentState'] 
