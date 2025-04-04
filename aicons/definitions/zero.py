@@ -1,7 +1,7 @@
 """
 Zero AIcon Module
 
-A simplified version of AIcon that uses Gemini for LLM integration and tracks context window usage.
+A simplified version of AIcon that uses various LLM backends for integration and tracks context window usage.
 The context window is split into four parts:
 1. State Representation (priors, sensors, posteriors)
 2. Utility Function
@@ -9,9 +9,8 @@ The context window is split into four parts:
 4. Inference
 """
 
-from typing import Dict, Any, Optional, List, Tuple, Literal, Callable, Union
+from typing import Dict, Any, Optional, List, Tuple, Literal, Callable, Union, AsyncGenerator
 import json
-import google.generativeai as genai
 import os
 from dotenv import load_dotenv
 import logging
@@ -19,6 +18,8 @@ import numpy as np
 import tensorflow_probability as tfp
 import time
 from datetime import datetime
+import asyncio
+import aiohttp
 
 # Import BayesBrain and its components
 from ..bayesbrainGPT.bayes_brain_ref import BayesBrain
@@ -41,6 +42,9 @@ from ..bayesbrainGPT.state_representation.latent_variables import (
 )
 from ..bayesbrainGPT.state_representation import BayesianState
 
+# Import LLM implementations
+from .llms import create_llm, BaseLLM
+
 # Load environment variables
 load_dotenv()
 
@@ -48,29 +52,16 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Define available models and their context window sizes
-MODEL_CONFIGS = {
-    "gemini-1.5-flash": {
-        "context_window": 1_000_000,  # 1M tokens
-        "description": "Fast and versatile performance across a diverse variety of tasks"
-    },
-    "gemini-1.5-pro": {
-        "context_window": 2_000_000,  # 2M tokens
-        "description": "Complex reasoning tasks requiring more intelligence"
-    }
-}
-
 class ZeroAIcon:
     """
-    A simplified AIcon implementation that uses Gemini and tracks context window usage.
+    A simplified AIcon implementation that supports multiple LLM backends.
     """
     
-    def __init__(self, name: str, description: str, model_name: str = "gemini-1.5-flash"):
+    def __init__(self, name: str, description: str, model_name: str = "deepseek-r1:7b"):
         """Initialize ZeroAIcon."""
         self.name = name
         self.description = description
         self.model_name = model_name
-        self.context_window_size = 1000000  # 1M tokens for Flash model
         
         # Initialize token usage tracking
         self.token_usage = {
@@ -80,26 +71,10 @@ class ZeroAIcon:
             "inference": 0
         }
         
-        # Initialize brain
-        self.brain = BayesBrain()
-        
         # Initialize LLM
-        self.llm = None
-        self._initialize_llm()
+        self.llm = create_llm(model_name)
         
-        # Validate model name
-        if model_name not in MODEL_CONFIGS:
-            raise ValueError(f"Invalid model name. Must be one of: {list(MODEL_CONFIGS.keys())}")
-        
-        # Initialize Gemini client
-        genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-        self.model = genai.GenerativeModel(model_name)
-        
-        # Initialize context window tracking
-        self.model_config = MODEL_CONFIGS[model_name]
-        self.context_window = self.model_config["context_window"]
-        
-        # Initialize BayesBrain
+        # Initialize brain
         self.brain = BayesBrain(
             name=f"{name}_brain",
             description=f"Bayesian brain for {name}"
@@ -107,49 +82,26 @@ class ZeroAIcon:
         self.brain.set_aicon(self)  # Set reference to this AIcon
         
         # Setup logging
-        logger.info(f"Initialized {self.name} with {model_name} (context window: {self.context_window:,} tokens)")
-        logger.info(f"Model description: {self.model_config['description']}")
-        
-    def _initialize_llm(self):
-        # Implementation of _initialize_llm method
-        pass
+        logger.info(f"Initialized {self.name} with {model_name}")
+        logger.info(f"Context window: {self.llm.context_window:,} tokens")
     
     def _count_tokens(self, text: str) -> int:
-        """
-        Count tokens in text using Gemini's token counter.
-        
-        Args:
-            text: Text to count tokens for
-            
-        Returns:
-            Number of tokens
-        """
-        return self.model.count_tokens(text).total_tokens
+        """Count tokens in text using LLM's token counter."""
+        return self.llm.count_tokens(text)
     
     def _update_token_usage(self, component: str, text: str) -> None:
-        """
-        Update token usage for a specific component.
-        
-        Args:
-            component: Component name ('state_representation', 'utility_function', etc.)
-            text: Text to count tokens for
-        """
+        """Update token usage for a specific component."""
         tokens = self._count_tokens(text)
         self.token_usage[component] += tokens
-        remaining = self.context_window - sum(self.token_usage.values())
+        remaining = self.llm.context_window - sum(self.token_usage.values())
         
-        if remaining < self.context_window * 0.1:  # Less than 10% remaining
-            logger.warning(f"Low remaining tokens: {remaining:,} ({remaining/self.context_window:.1%} of context window)")
-        
+        if remaining < self.llm.context_window * 0.1:  # Less than 10% remaining
+            logger.warning(f"Low remaining tokens: {remaining:,} ({remaining/self.llm.context_window:.1%} of context window)")
+    
     def get_remaining_tokens(self) -> int:
-        """
-        Get remaining tokens in context window.
-        
-        Returns:
-            Number of remaining tokens
-        """
+        """Get remaining tokens in context window."""
         total_used = sum(self.token_usage.values())
-        remaining = self.context_window - total_used
+        remaining = self.llm.context_window - total_used
         logger.info(f"Remaining tokens: {remaining:,}")
         return remaining
     
@@ -453,16 +405,8 @@ class ZeroAIcon:
             "action_space": str(self.brain.action_space)
         }
     
-    def make_inference(self, prompt: str) -> str:
-        """
-        Make inference using Gemini.
-        
-        Args:
-            prompt: Prompt for inference
-            
-        Returns:
-            Inference result
-        """
+    async def make_inference(self, prompt: str) -> str:
+        """Make inference using configured LLM."""
         # Prepare context with all components
         context = {
             "state": self.get_state_representation(),
@@ -478,12 +422,14 @@ class ZeroAIcon:
         remaining = self.get_remaining_tokens()
         if remaining < 1000:  # Safety margin
             logger.warning("Low remaining tokens in context window")
-            
-        # Make inference using Gemini
-        response = self.model.generate_content(json.dumps(context))
         
-        return response.text
+        # Make inference using LLM
+        full_response = ""
+        async for chunk in self.llm.generate(json.dumps(context)):
+            full_response += chunk
         
+        return full_response.strip()
+    
     def get_state_representation_text(self) -> str:
         """Get the actual text content of the state representation."""
         if not self.brain:
@@ -584,5 +530,5 @@ class ZeroAIcon:
                 "content": self.get_inference_text()
             },
             "total_used": sum(self.token_usage.values()),
-            "remaining": self.context_window_size - sum(self.token_usage.values())
+            "remaining": self.llm.context_window - sum(self.token_usage.values())
         } 
