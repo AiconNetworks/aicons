@@ -484,22 +484,105 @@ class ZeroAIcon:
         
         return response.text
         
+    def get_state_representation_text(self) -> str:
+        """Get the actual text content of the state representation."""
+        if not self.brain:
+            return "No brain defined"
+        
+        # Get current state and posterior samples
+        state = self.brain.get_state()
+        posteriors = self.brain.get_posterior_samples()
+        
+        # Group metrics by ad ID
+        ad_metrics = {}
+        for name, value in state.items():
+            if name.startswith('ad_'):
+                # Extract ad ID and metric name
+                parts = name.split('_')
+                ad_id = parts[1]
+                metric = '_'.join(parts[2:])
+                
+                if ad_id not in ad_metrics:
+                    ad_metrics[ad_id] = {}
+                ad_metrics[ad_id][metric] = value
+        
+        # Create a cleaner output format
+        output = []
+        output.append("=== Ad Performance Metrics ===")
+        
+        # Format metrics for each ad
+        for ad_id, metrics in ad_metrics.items():
+            output.append(f"\nAd ID: {ad_id}")
+            output.append("-" * 30)
+            
+            # Calculate statistics for each metric
+            for metric, value in metrics.items():
+                # Get the corresponding posterior samples
+                full_metric_name = f"ad_{ad_id}_{metric}"
+                if full_metric_name in posteriors:
+                    samples = posteriors[full_metric_name]
+                    if isinstance(samples, np.ndarray) and len(samples) > 0:
+                        mean = np.mean(samples)
+                        std = np.std(samples)
+                        output.append(f"{metric:20s}:")
+                        output.append(f"  Current: {value:10.2f}")
+                        output.append(f"  Mean:    {mean:10.2f}")
+                        output.append(f"  Std:     {std:10.2f}")
+                    else:
+                        output.append(f"{metric:20s}: {value:10.2f}")
+                else:
+                    output.append(f"{metric:20s}: {value:10.2f}")
+        
+        # Add belief history if available
+        if hasattr(self.brain, 'update_history') and self.brain.update_history:
+            output.append("\n=== Belief Update History ===")
+            for update in self.brain.update_history:
+                output.append(f"\nUpdate at {update.get('timestamp', 'unknown time')}:")
+                for name, value in update.get('values', {}).items():
+                    output.append(f"  {name}: {value}")
+        
+        return "\n".join(output)
+
+    def get_utility_function_text(self) -> str:
+        """Get the actual text content of the utility function."""
+        if not self.brain or not self.brain.utility_function:
+            return "No utility function defined"
+        
+        return str(self.brain.utility_function)
+
     def get_action_space_text(self) -> str:
-        """Get the actual text content of the action space from the window context."""
-        if not self.brain.action_space:
+        """Get the actual text content of the action space."""
+        if not self.brain or not self.brain.action_space:
             return "No action space defined"
         
-        # Use the raw_print method from ActionSpace
         return self.brain.action_space.raw_print()
 
+    def get_inference_text(self) -> str:
+        """Get the actual text content of the inference queries."""
+        if not hasattr(self, 'inference_queries'):
+            return "No inference queries yet"
+        
+        return json.dumps(self.inference_queries, indent=2)
+
     def get_token_usage_report(self) -> Dict[str, Any]:
-        """Get a report of token usage across components."""
+        """Get a report of token usage across components with actual content."""
         return {
-            "state_representation": self.token_usage["state_representation"],
-            "utility_function": self.token_usage["utility_function"],
-            "action_space": self.token_usage["action_space"],
-            "inference": self.token_usage["inference"],
+            "state_representation": {
+                "tokens": self.token_usage["state_representation"],
+                "content": self.get_state_representation_text()
+            },
+            "utility_function": {
+                "tokens": self.token_usage["utility_function"],
+                "content": self.get_utility_function_text()
+            },
+            "action_space": {
+                "tokens": self.token_usage["action_space"],
+                "content": self.get_action_space_text()
+            },
+            "inference": {
+                "tokens": self.token_usage["inference"],
+                "content": self.get_inference_text()
+            },
             "total_used": sum(self.token_usage.values()),
-            "remaining": self.context_window_size - sum(self.token_usage.values()),
-            "action_space_text": self.get_action_space_text()  # Add the actual text content
+            "remaining": self.context_window_size - sum(self.token_usage.values())
         } 

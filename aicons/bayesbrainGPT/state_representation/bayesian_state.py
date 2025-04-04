@@ -675,11 +675,6 @@ class BayesianState:
         """
         samples = {}
         for name, factor in self.factors.items():
-            print(f"\nDEBUG - Factor {name}:")
-            print(f"Type: {type(factor)}")
-            print(f"Dir: {dir(factor)}")
-            print(f"Dict: {factor.__dict__}")
-            
             if isinstance(factor, ContinuousLatentVariable):
                 # For continuous factors, sample from their distribution
                 if isinstance(factor.tf_distribution, tfp.distributions.Normal):

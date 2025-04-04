@@ -136,7 +136,6 @@ class BayesBrain:
             Dictionary of posterior samples
         """
         if self.posterior_samples is None:
-            print("No posterior samples available")
             return {}
         
         # If num_samples specified, randomly sample that many
@@ -270,23 +269,16 @@ class BayesBrain:
         Returns:
             Dictionary mapping action keys to their expected utilities
         """
-        print("\n=== Debug: compute_action_utilities ===")
-        print(f"Input state: {state}")
-        
         action_utilities = {}
         
         # Get posterior samples once for all actions
         posterior_samples = self.get_posterior_samples(num_samples)
-        print(f"\nPosterior samples: {posterior_samples}")
         
         # Get all possible actions from action space dimensions
         possible_actions = self.action_space.enumerate_actions()
-        print(f"\nEvaluating {len(possible_actions)} possible actions")
         
         # Evaluate each possible action
         for action in possible_actions:
-            print(f"\nProcessing action: {action}")
-            
             # Create a single sample dictionary with current values
             sample = {}
             for name, samples in posterior_samples.items():
@@ -297,20 +289,14 @@ class BayesBrain:
                     # If it's a scalar value, use it directly
                     sample[name] = float(samples)
             
-            print(f"\nFinal sample dictionary: {sample}")
-            
             # Use evaluate method
             try:
                 utility = self.utility_function.evaluate(action, sample)
-                print(f"Computed utility: {utility}")
                 # Convert action to tuple for use as key
                 action_key = tuple(sorted(action.items()))
                 action_utilities[action_key] = utility
             except Exception as e:
-                print(f"Error computing utility: {str(e)}")
-                print(f"Action type: {type(action)}")
-                print(f"Sample type: {type(sample)}")
-                raise
+                raise ValueError(f"Error computing utility: {str(e)}")
             
         return action_utilities
     
@@ -626,10 +612,10 @@ class BayesBrain:
             
             # Record update in history
             self.update_history.append({
-                'timestamp': self.last_posterior_update,
+                'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
                 'sensor': sensor_name,
-                'num_samples': len(next(iter(updated_samples.values()))),
-                'parameters': list(updated_samples.keys())
+                'values': {name: float(np.mean(samples)) if isinstance(samples, np.ndarray) else samples 
+                          for name, samples in updated_samples.items()}
             })
             
             print(f"Successfully updated beliefs at {self.last_posterior_update}")
