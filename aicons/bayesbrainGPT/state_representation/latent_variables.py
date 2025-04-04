@@ -110,53 +110,6 @@ class ContinuousLatentVariable(LatentVariable):
         self.value = new_value
         if new_uncertainty is not None:
             self.update_uncertainty(new_uncertainty)
-            
-    def sample_prior(self, n_samples: int = 1) -> Union[float, np.ndarray]:
-        """
-        Sample from the prior distribution.
-        
-        Args:
-            n_samples: Number of samples to draw
-            
-        Returns:
-            Single value or array of samples from prior distribution
-        """
-        if self.tf_distribution:
-            # Use TensorFlow distribution if available
-            samples = self.tf_distribution.sample(n_samples).numpy()
-            return samples[0] if n_samples == 1 else samples
-            
-        # Fallback to numpy for Gaussian prior
-        samples = np.random.normal(self.initial_value, self._uncertainty, size=n_samples)
-        return samples[0] if n_samples == 1 else samples
-        
-    def sample_posterior(self, n_samples: int = 1) -> Union[float, np.ndarray]:
-        """
-        Sample from the posterior distribution.
-        
-        Args:
-            n_samples: Number of samples to draw
-            
-        Returns:
-            Single value or array of samples from posterior distribution
-        """
-        # Assume Gaussian posterior for continuous variables
-        samples = np.random.normal(self.value, self._uncertainty, size=n_samples)
-        return samples[0] if n_samples == 1 else samples
-        
-    def log_prior(self, value: float) -> float:
-        """
-        Compute log prior probability of a value.
-        
-        Args:
-            value: Value to compute probability for
-            
-        Returns:
-            Log probability of the value under the prior
-        """
-        # Assume Gaussian prior
-        return -0.5 * np.log(2 * np.pi * self._uncertainty**2) - \
-               0.5 * ((value - self.initial_value) / self._uncertainty)**2
 
 
 class CategoricalLatentVariable(LatentVariable):
@@ -220,63 +173,6 @@ class CategoricalLatentVariable(LatentVariable):
             # Normalize probabilities
             total = sum(posterior_probs.values())
             self.posterior_probs = {k: v/total for k, v in posterior_probs.items()}
-            
-    def sample_prior(self, n_samples: int = 1) -> Union[str, List[str]]:
-        """
-        Sample from the prior distribution.
-        
-        Args:
-            n_samples: Number of samples to draw
-            
-        Returns:
-            Single value or list of samples from prior distribution
-        """
-        if self.tf_distribution:
-            # Use TensorFlow distribution if available
-            samples = self.tf_distribution.sample(n_samples).numpy()
-            
-            # Convert indices to category names
-            if n_samples == 1:
-                return self.possible_values[int(samples)]
-            else:
-                return [self.possible_values[int(idx)] for idx in samples]
-            
-        # Fallback to numpy
-        values = list(self.prior_probs.keys())
-        probs = list(self.prior_probs.values())
-        
-        samples = np.random.choice(values, size=n_samples, p=probs)
-        return samples[0] if n_samples == 1 else samples.tolist()
-        
-    def sample_posterior(self, n_samples: int = 1) -> Union[str, List[str]]:
-        """
-        Sample from the posterior distribution.
-        
-        Args:
-            n_samples: Number of samples to draw
-            
-        Returns:
-            Single value or list of samples from posterior distribution
-        """
-        values = list(self.posterior_probs.keys())
-        probs = list(self.posterior_probs.values())
-        
-        samples = np.random.choice(values, size=n_samples, p=probs)
-        return samples[0] if n_samples == 1 else samples.tolist()
-        
-    def log_prior(self, value: str) -> float:
-        """
-        Compute log prior probability of a value.
-        
-        Args:
-            value: Value to compute probability for
-            
-        Returns:
-            Log probability of the value under the prior
-        """
-        if value not in self.prior_probs:
-            return -float('inf')
-        return np.log(self.prior_probs[value])
 
 
 class DiscreteLatentVariable(LatentVariable):
@@ -307,10 +203,6 @@ class DiscreteLatentVariable(LatentVariable):
                 rate=float(params.get('rate', value))
             )
             
-    def sample(self, n_samples: int = 1) -> np.ndarray:
-        """Sample from the distribution"""
-        return self.distribution.sample(n_samples).numpy()
-        
     def log_prob(self, value: int) -> float:
         """Compute log probability of a value"""
         return float(self.distribution.log_prob(value))
@@ -349,62 +241,3 @@ class HierarchicalLatentVariable(ContinuousLatentVariable):
         self.parents = parents
         self.relation_type = relation_type
         self.parameters = parameters or {}
-        
-    def predict_from_parents(self, parent_values: Dict[str, Any]) -> float:
-        """
-        Predict the value of this variable from parent values.
-        
-        Args:
-            parent_values: Dictionary mapping parent names to their values
-            
-        Returns:
-            Predicted value based on the hierarchical relation
-        """
-        if self.relation_type == "linear":
-            # Linear relation: y = b0 + b1*x1 + b2*x2 + ... + noise
-            intercept = self.parameters.get("intercept", 0.0)
-            coeffs = {k: v for k, v in self.parameters.items() if k != "intercept"}
-            
-            # Check all needed parents are provided
-            for parent in coeffs:
-                if parent not in parent_values:
-                    raise ValueError(f"Missing parent value for '{parent}'")
-            
-            # Compute prediction
-            predicted = intercept
-            for parent, coef in coeffs.items():
-                predicted += coef * parent_values[parent]
-                
-            return predicted
-            
-        elif self.relation_type == "exponential":
-            # Exponential relation: y = a * exp(b1*x1 + b2*x2 + ...) + noise
-            scale = self.parameters.get("scale", 1.0)
-            coeffs = {k: v for k, v in self.parameters.items() if k != "scale"}
-            
-            # Check all needed parents are provided
-            for parent in coeffs:
-                if parent not in parent_values:
-                    raise ValueError(f"Missing parent value for '{parent}'")
-            
-            # Compute prediction
-            exponent = 0.0
-            for parent, coef in coeffs.items():
-                exponent += coef * parent_values[parent]
-                
-            predicted = scale * np.exp(exponent)
-            return predicted
-            
-        else:
-            raise ValueError(f"Unsupported relation type: {self.relation_type}")
-    
-    def update_from_parents(self, parent_values: Dict[str, Any], noise: float = 0.0):
-        """
-        Update the value based on parent values.
-        
-        Args:
-            parent_values: Dictionary mapping parent names to their values
-            noise: Optional noise term to add (default: 0)
-        """
-        predicted = self.predict_from_parents(parent_values)
-        self.value = predicted + noise 
