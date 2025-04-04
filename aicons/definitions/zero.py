@@ -147,7 +147,7 @@ class ZeroAIcon:
         Returns:
             Dictionary of state factors
         """
-        return self.brain.get_state_factors()
+        return self.brain.state.get_state_factors()
     
     def add_sensor(self, name: str, sensor: Any, factor_mapping: Optional[Dict[str, str]] = None) -> Any:
         """
@@ -206,11 +206,11 @@ class ZeroAIcon:
     
     def get_state(self) -> Dict[str, Any]:
         """Get the current state beliefs."""
-        return self.brain.get_state()
+        return self.brain.state.get_beliefs()
     
     def get_posterior_samples(self) -> Dict[str, Any]:
         """Get samples from the posterior distribution."""
-        return self.brain.get_posterior_samples()
+        return self.brain.state.get_posterior_samples()
     
     def define_action_space(self, space_type: str, **kwargs) -> ActionSpace:
         """
@@ -399,7 +399,7 @@ class ZeroAIcon:
     def get_state_representation(self) -> Dict[str, Any]:
         """Get the current state representation."""
         return {
-            "state": self.brain.state.get_state(),
+            "state": self.brain.state.get_beliefs(),
             "posteriors": self.brain.state.get_posterior_samples(),
             "utility_function": str(self.brain.utility_function),
             "action_space": str(self.brain.action_space)
@@ -436,8 +436,8 @@ class ZeroAIcon:
             return "No brain defined"
         
         # Get current state and posterior samples
-        state = self.brain.get_state()
-        posteriors = self.brain.get_posterior_samples()
+        state = self.brain.state.get_beliefs()
+        posteriors = self.brain.state.get_posterior_samples()
         
         # Group metrics by ad ID
         ad_metrics = {}

@@ -29,7 +29,7 @@ def main():
     aicon = ZeroAIcon(
         name="marketing_aicon",
         description="AIcon for marketing optimization",
-        model_name="gemini-1.5-flash"
+        model_name="deepseek-r1:7b"
     )
     logger.info(f"Created ZeroAIcon: {aicon.name}")
 
