@@ -92,11 +92,6 @@ class BayesBrain:
         self.last_decision_time = None
         self.last_action = None
         self.last_utility = None
-        
-        # Store posterior samples here
-        self.posterior_samples = None
-        self.last_posterior_update = None  # Timestamp of last posterior update
-        self.update_history = []
     
     def set_aicon(self, aicon: Any) -> None:
         """
@@ -135,19 +130,7 @@ class BayesBrain:
         Returns:
             Dictionary of posterior samples
         """
-        if self.posterior_samples is None:
-            return {}
-        
-        # If num_samples specified, randomly sample that many
-        if num_samples is not None and num_samples < len(next(iter(self.posterior_samples.values()))):
-            indices = np.random.choice(len(next(iter(self.posterior_samples.values()))), 
-                                    size=num_samples, replace=False)
-            return {
-                name: samples[indices] if isinstance(samples, np.ndarray) else samples
-                for name, samples in self.posterior_samples.items()
-            }
-        
-        return self.posterior_samples
+        return self.state.get_posterior_samples(num_samples)
     
     def find_best_action(self, num_samples: Optional[int] = None) -> Tuple[Optional[Dict[str, Any]], float]:
         """
@@ -597,7 +580,7 @@ class BayesBrain:
         # Get current posterior samples (from time t)
         current_samples = self.get_posterior_samples()
         if current_samples:
-            print(f"Using current posterior as prior (from {self.last_posterior_update})")
+            print(f"Using current posterior as prior (from {self.state.last_posterior_update})")
         
         # Update with new sensor data
         success = self.perception.update_from_sensor(sensor_name, environment)
@@ -611,15 +594,15 @@ class BayesBrain:
             self.set_posterior_samples(updated_samples)
             
             # Record update in history
-            self.update_history.append({
+            self.state.update_history.append({
                 'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
                 'sensor': sensor_name,
                 'values': {name: float(np.mean(samples)) if isinstance(samples, np.ndarray) else samples 
                           for name, samples in updated_samples.items()}
             })
             
-            print(f"Successfully updated beliefs at {self.last_posterior_update}")
-            print(f"Total updates in history: {len(self.update_history)}")
+            print(f"Successfully updated beliefs at {self.state.last_posterior_update}")
+            print(f"Total updates in history: {len(self.state.update_history)}")
             return True
         
         return False
@@ -643,23 +626,7 @@ class BayesBrain:
         Args:
             samples: Dictionary of posterior samples with factor information
         """
-        # Store posterior samples directly
-        self.posterior_samples = samples
-        
-        self.last_posterior_update = time.strftime("%Y-%m-%d %H:%M:%S")
-        print(f"Updated posterior samples at {self.last_posterior_update}")
-        
-        # Print sample statistics
-        print("\nPosterior Sample Statistics:")
-        for name, samples in self.posterior_samples.items():
-            if isinstance(samples, np.ndarray):
-                print(f"- {name}:")
-                print(f"  Mean: {np.mean(samples):.3f}")
-                print(f"  Std: {np.std(samples):.3f}")
-                print(f"  Min: {np.min(samples):.3f}")
-                print(f"  Max: {np.max(samples):.3f}")
-            else:
-                print(f"- {name}: {samples}")
+        self.state.set_posterior_samples(samples)
     
     def _load_saved_state(self):
         """Load saved state from file if available."""

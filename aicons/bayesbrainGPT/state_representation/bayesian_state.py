@@ -11,6 +11,7 @@ import numpy as np
 from pathlib import Path
 import tensorflow as tf
 import tensorflow_probability as tfp
+import time
 
 # TFP shortcuts
 tfd = tfp.distributions
@@ -50,6 +51,11 @@ class BayesianState:
         self.prior_distributions = {}  # TFP distributions for each latent variable
         self.conditional_distributions = {}  # Functions that return conditional distributions
         self.topological_order = []  # Ordering of factors for joint distribution
+        
+        # State management
+        self.posterior_samples = None  # Current posterior samples
+        self.last_posterior_update = None  # Timestamp of last posterior update
+        self.update_history = []  # History of state updates
     
 
 
@@ -626,3 +632,58 @@ class BayesianState:
                 raise ValueError(f"Unsupported factor type: {type(factor)}")
         
         return samples
+
+    def get_posterior_samples(self, num_samples: Optional[int] = None) -> Dict[str, Any]:
+        """
+        Get samples from the posterior distribution.
+        
+        Args:
+            num_samples: Number of samples to return. If None, return all available.
+            
+        Returns:
+            Dictionary of posterior samples
+        """
+        if self.posterior_samples is None:
+            return {}
+        
+        # If num_samples specified, randomly sample that many
+        if num_samples is not None and num_samples < len(next(iter(self.posterior_samples.values()))):
+            indices = np.random.choice(len(next(iter(self.posterior_samples.values()))), 
+                                    size=num_samples, replace=False)
+            return {
+                name: samples[indices] if isinstance(samples, np.ndarray) else samples
+                for name, samples in self.posterior_samples.items()
+            }
+        
+        return self.posterior_samples
+
+    def set_posterior_samples(self, samples: Dict[str, Any]):
+        """
+        Set the posterior samples directly.
+        
+        Args:
+            samples: Dictionary of posterior samples with factor information
+        """
+        # Store posterior samples directly
+        self.posterior_samples = samples
+        
+        self.last_posterior_update = time.strftime("%Y-%m-%d %H:%M:%S")
+        print(f"Updated posterior samples at {self.last_posterior_update}")
+        
+        # Print sample statistics
+        print("\nPosterior Sample Statistics:")
+        for name, samples in self.posterior_samples.items():
+            if isinstance(samples, np.ndarray):
+                print(f"- {name}:")
+                print(f"  Mean: {np.mean(samples):.3f}")
+                print(f"  Std: {np.std(samples):.3f}")
+                print(f"  Min: {np.min(samples):.3f}")
+                print(f"  Max: {np.max(samples):.3f}")
+            else:
+                print(f"- {name}: {samples}")
+            
+        # Add to update history
+        self.update_history.append({
+            "timestamp": self.last_posterior_update,
+            "samples": samples
+        })
