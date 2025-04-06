@@ -14,6 +14,9 @@
   let sendButton;
   let clearButton;
   let typingIndicator;
+  let contextWindowBtn;
+  let contextWindowPanel;
+  let closeBtn;
   
   // Initialize Markdown parser
   const md = window.markdownit({
@@ -24,7 +27,7 @@
 
   // State
   let isProcessing = false;
-  let lastRawResponse = null;
+  let lastTokenUsage = null;
 
   /**
    * Initialize the app when DOM is loaded
@@ -41,17 +44,146 @@
     sendButton = id("send-button");
     clearButton = id("clear-button");
     typingIndicator = id("typing-indicator");
+    contextWindowBtn = id("context-window-btn");
+    contextWindowPanel = id("context-window-panel");
+    closeBtn = contextWindowPanel.querySelector(".close-btn");
     
     // Set up event listeners
     sendButton.addEventListener("click", handleSendMessage);
     messageInput.addEventListener("keypress", handleKeyPress);
     clearButton.addEventListener("click", handleClearChat);
+    contextWindowBtn.addEventListener("click", openContextWindow);
+    closeBtn.addEventListener("click", closeContextWindow);
+    window.addEventListener("click", function(event) {
+      if (event.target === contextWindowPanel) {
+        closeContextWindow();
+      }
+    });
     
     // Set up delegation for thinking toggles
     messagesContainer.addEventListener("click", handleThinkingToggleClick);
     
     // Load initial chat history
     loadChatHistory();
+    
+    // Load initial token usage
+    loadTokenUsage();
+  }
+
+  /**
+   * Opens the context window modal
+   */
+  function openContextWindow() {
+    // Always reload token usage when opening modal
+    loadTokenUsage(true);
+    contextWindowPanel.style.display = "block";
+  }
+
+  /**
+   * Closes the context window modal
+   */
+  function closeContextWindow() {
+    contextWindowPanel.style.display = "none";
+  }
+
+  /**
+   * Fetches token usage data from the server
+   */
+  function loadTokenUsage(showLoadingState = false) {
+    // Show loading state if requested
+    if (showLoadingState) {
+      id("total-usage-text").textContent = "Loading...";
+      id("state-tokens").textContent = "Loading...";
+      id("utility-tokens").textContent = "Loading...";
+      id("action-tokens").textContent = "Loading...";
+      id("inference-tokens").textContent = "Loading...";
+    }
+    
+    fetch("/api/token-usage?" + new Date().getTime())  // Add timestamp to prevent caching
+      .then(response => {
+        if (!response.ok) {
+          throw new Error("Failed to fetch token usage data");
+        }
+        return response.json();
+      })
+      .then(data => {
+        console.log("Received token usage data:", data);
+        updateTokenUsageDisplay(data);
+        lastTokenUsage = data;
+      })
+      .catch(error => {
+        console.error("Error loading token usage:", error);
+        // Show error in modal
+        id("total-usage-text").textContent = "Error loading data";
+      });
+  }
+
+  /**
+   * Updates the token usage display with the provided data
+   */
+  function updateTokenUsageDisplay(data) {
+    if (!data || typeof data.total_used !== 'number') {
+      console.error("Invalid token usage data:", data);
+      id("total-usage-text").textContent = "Invalid data";
+      return;
+    }
+
+    // Update total usage bar
+    const totalUsed = data.total_used || 0;
+    const totalAvailable = totalUsed + (data.remaining || 0);
+    
+    // Handle case where both values are 0 (no context used yet)
+    const usagePercent = totalAvailable === 0 ? 0 : Math.round((totalUsed / totalAvailable) * 100);
+    
+    const totalBar = id("total-usage-bar");
+    const totalText = id("total-usage-text");
+    
+    totalBar.style.width = `${usagePercent}%`;
+    
+    if (totalAvailable === 0) {
+      totalText.textContent = "No context used yet";
+    } else {
+      totalText.textContent = `${usagePercent}% (${totalUsed.toLocaleString()} / ${totalAvailable.toLocaleString()} tokens)`;
+    }
+    
+    // Set bar color based on usage
+    if (usagePercent > 90) {
+      totalBar.style.backgroundColor = "#dc3545"; // Red
+    } else if (usagePercent > 70) {
+      totalBar.style.backgroundColor = "#ffc107"; // Yellow
+    } else {
+      totalBar.style.backgroundColor = "#4a69bd"; // Blue
+    }
+    
+    // Update component details
+    updateComponentDisplay("state", data.state_representation);
+    updateComponentDisplay("utility", data.utility_function);
+    updateComponentDisplay("action", data.action_space);
+    updateComponentDisplay("inference", data.inference);
+  }
+
+  /**
+   * Updates a specific component's display
+   */
+  function updateComponentDisplay(prefix, componentData) {
+    if (!componentData) {
+      console.error(`Missing component data for ${prefix}`);
+      return;
+    }
+
+    const tokensElement = id(`${prefix}-tokens`);
+    const contentElement = id(`${prefix}-content`);
+    
+    // Display token count
+    const tokens = componentData.tokens || 0;
+    tokensElement.textContent = `${tokens.toLocaleString()} tokens`;
+    
+    // Format the content
+    if (componentData.content && componentData.content.trim()) {
+      contentElement.textContent = componentData.content;
+    } else {
+      contentElement.textContent = "No content available";
+    }
   }
 
   /**
@@ -229,6 +361,8 @@
           if (done) {
             console.log("Stream complete");
             isProcessing = false;
+            // Add a small delay before loading token usage to ensure server has updated
+            setTimeout(() => loadTokenUsage(), 500);
             return;
           }
           
@@ -330,6 +464,8 @@
                   
                   scrollToBottom();
                   isProcessing = false;
+                  // Add a small delay before loading token usage to ensure server has updated
+                  setTimeout(() => loadTokenUsage(), 500);
                   return;
                 }
               } catch (error) {

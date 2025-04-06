@@ -11,9 +11,62 @@
 <body>
     <header>
         <div>ZeroAIcon Chat</div>
+        <div class="header-controls">
+            <button id="context-window-btn" class="header-button" title="View Context Window Usage">
+                <span>Context Window</span>
+            </button>
+        </div>
     </header>
     
     <div class="container">
+        <div id="context-window-panel" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>Context Window Usage</h2>
+                    <span class="close-btn">&times;</span>
+                </div>
+                <div class="modal-body">
+                    <div class="usage-bar-container">
+                        <div class="usage-label">Total Usage:</div>
+                        <div class="usage-bar-wrapper">
+                            <div class="usage-bar" id="total-usage-bar"></div>
+                            <div class="usage-text" id="total-usage-text">0%</div>
+                        </div>
+                    </div>
+                    <div class="usage-components">
+                        <div class="usage-component">
+                            <div class="component-header">
+                                <div class="component-name">State Representation</div>
+                                <div class="component-tokens" id="state-tokens">0 tokens</div>
+                            </div>
+                            <div class="component-content" id="state-content">Loading...</div>
+                        </div>
+                        <div class="usage-component">
+                            <div class="component-header">
+                                <div class="component-name">Utility Function</div>
+                                <div class="component-tokens" id="utility-tokens">0 tokens</div>
+                            </div>
+                            <div class="component-content" id="utility-content">Loading...</div>
+                        </div>
+                        <div class="usage-component">
+                            <div class="component-header">
+                                <div class="component-name">Action Space</div>
+                                <div class="component-tokens" id="action-tokens">0 tokens</div>
+                            </div>
+                            <div class="component-content" id="action-content">Loading...</div>
+                        </div>
+                        <div class="usage-component">
+                            <div class="component-header">
+                                <div class="component-name">Inference</div>
+                                <div class="component-tokens" id="inference-tokens">0 tokens</div>
+                            </div>
+                            <div class="component-content" id="inference-content">Loading...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
         <div class="chat-area">
             <div id="messages" class="messages-container">
                 <div class="message assistant-message">

@@ -208,6 +208,23 @@ def clear_history():
     chat_history = []
     return jsonify({'status': 'success'})
 
+@app.route('/api/token-usage', methods=['GET'])
+def get_token_usage():
+    """Get token usage from ZeroAIcon."""
+    try:
+        # Get token usage report with updated data
+        usage_report = aicon.get_token_usage_report()
+        
+        # For debugging
+        logger.info(f"Token usage report: total_used={usage_report['total_used']}, remaining={usage_report['remaining']}")
+        
+        # Return as JSON
+        return jsonify(usage_report)
+    
+    except Exception as e:
+        logger.error(f"Error getting token usage: {str(e)}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
 def run_server(host='0.0.0.0', port=8000, debug=False):
     """Run the Flask server."""
     logger.info(f"Starting ZeroAIcon Chat Server on {host}:{port}")
