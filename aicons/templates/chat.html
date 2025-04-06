@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ZeroAIcon Chat</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/chat.css') }}">
+    <!-- Add Markdown-it for Markdown rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/markdown-it@13.0.1/dist/markdown-it.min.js"></script>
+</head>
+<body>
+    <header>
+        <div>ZeroAIcon Chat</div>
+    </header>
+    
+    <div class="container">
+        <div class="chat-area">
+            <div id="messages" class="messages-container">
+                <div class="message assistant-message">
+                    <div class="message-content">
+                        Hello! I'm ZeroAIcon. How can I help you today?
+                    </div>
+                </div>
+                <div id="typing-indicator" class="typing-indicator">
+                    <div class="typing-status">
+                        <span class="dots"><span>.</span><span>.</span><span>.</span></span> Thinking...
+                    </div>
+                </div>
+            </div>
+            
+            <div class="input-area">
+                <input type="text" id="message-input" class="message-input" placeholder="Type your message here...">
+                <button id="send-button" class="send-button">Send</button>
+                <button id="clear-button" class="clear-button">Clear</button>
+            </div>
+        </div>
+    </div>
+    
+    <script src="{{ url_for('static', filename='js/chat.js') }}"></script>
+</body>
+</html> 

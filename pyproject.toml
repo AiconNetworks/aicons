@@ -20,7 +20,10 @@ tabulate = "^0.9.0"
 python-dotenv = "^1.1.0"
 google-generativeai = "^0.8.4"
 aiohttp = "^3.11.16"
+nest-asyncio = "^1.6.0"
 
+[tool.poetry.scripts]
+zero-chat = "aicons.cli:main"
 
 [build-system]
 requires = ["poetry-core"]

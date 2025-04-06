@@ -258,3 +258,39 @@ This system uses a full Bayesian approach:
 4. **Expected Utility**: Integration over posterior to find optimal actions
 
 The gradient-based optimization ensures proper integration over the posterior distribution, accounting for uncertainty in ad performance parameters.
+
+## ZeroAIcon Chat Interface
+
+The project includes an interactive chat interface that allows you to converse with the ZeroAIcon's reasoning process.
+
+### Features
+
+- Real-time streaming of AI responses
+- Toggleable "Thinking Process" visualization
+- Interactive collapsible sections for AI reasoning
+- Clean web interface for easy interaction
+
+### Running the Chat Server
+
+To start the chat interface:
+
+```bash
+# Using Poetry (recommended)
+poetry run python run_chat.py --port 8000
+
+# Or with plain Python
+python run_chat.py --port 8000
+```
+
+Then open your browser to http://localhost:8000 to access the chat interface.
+
+### Chat Commands
+
+The chat interface responds to natural language queries and shows both the final answer and the AI's reasoning process.
+
+You can toggle the display of the thinking process in two ways:
+
+1. Use the "Show Thinking Process" toggle switch before sending a message
+2. Click the "Show Thinking Process" button that appears with any response that includes thinking steps
+
+This interactive thinking visualization helps understand how the AI approaches problems and makes its decisions.
