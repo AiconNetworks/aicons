@@ -12,7 +12,6 @@
   let messagesContainer;
   let messageInput;
   let sendButton;
-  let clearButton;
   let typingIndicator;
   let contextWindowBtn;
   let contextWindowPanel;
@@ -64,7 +63,6 @@
     messagesContainer = id("messages");
     messageInput = id("message-input");
     sendButton = id("send-button");
-    clearButton = id("clear-button");
     typingIndicator = id("typing-indicator");
     contextWindowBtn = id("context-window-btn");
     contextWindowPanel = id("context-window-panel");
@@ -93,7 +91,6 @@
     // Set up event listeners
     sendButton.addEventListener("click", handleSendMessage);
     messageInput.addEventListener("keypress", handleKeyPress);
-    clearButton.addEventListener("click", handleClearChat);
     contextWindowBtn.addEventListener("click", openContextWindow);
     configBtn.addEventListener("click", openConfigPanel);
     
@@ -330,19 +327,6 @@
     if (e.key === "Enter" && !isProcessing) {
       sendUserMessage();
     }
-  }
-
-  /**
-   * Handles clearing the chat history
-   */
-  function handleClearChat() {
-    clearChat()
-      .then(() => {
-        resetChatUI();
-      })
-      .catch(error => {
-        console.error("Error clearing chat:", error);
-      });
   }
 
   /**
@@ -599,25 +583,6 @@
     
     typingIndicator.style.display = "none";
     scrollToBottom();
-  }
-
-  /**
-   * Clears the chat history on the server
-   */
-  function clearChat() {
-    return fetch("/api/clear", { method: "POST" });
-  }
-
-  /**
-   * Resets the chat UI after clearing
-   */
-  function resetChatUI() {
-    messagesContainer.innerHTML = "";
-    const initialMessage = document.createElement("div");
-    initialMessage.className = "message assistant-message";
-    initialMessage.innerHTML = '<div class="message-content">Hello! I\'m ZeroAIcon. How can I help you today?</div>';
-    messagesContainer.appendChild(initialMessage);
-    messagesContainer.appendChild(typingIndicator);
   }
 
   /**
