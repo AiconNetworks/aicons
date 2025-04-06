@@ -12,6 +12,9 @@
     <header>
         <div>ZeroAIcon Chat</div>
         <div class="header-controls">
+            <button id="config-btn" class="header-button" title="Configure AIcon">
+                <span>Configure</span>
+            </button>
             <button id="context-window-btn" class="header-button" title="View Context Window Usage">
                 <span>Context Window</span>
             </button>
@@ -19,6 +22,7 @@
     </header>
     
     <div class="container">
+        <!-- Context Window Modal -->
         <div id="context-window-panel" class="modal">
             <div class="modal-content">
                 <div class="modal-header">
@@ -61,6 +65,245 @@
                                 <div class="component-tokens" id="inference-tokens">0 tokens</div>
                             </div>
                             <div class="component-content" id="inference-content">Loading...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Configuration Modal -->
+        <div id="config-panel" class="modal">
+            <div class="modal-content config-modal">
+                <div class="modal-header">
+                    <h2>Configure ZeroAIcon</h2>
+                    <span class="close-btn">&times;</span>
+                </div>
+                <div class="modal-body">
+                    <div class="config-tabs">
+                        <button class="tab-btn active" data-tab="sensors">Sensors</button>
+                        <button class="tab-btn" data-tab="state-factors">State Factors</button>
+                        <button class="tab-btn" data-tab="action-space">Action Space</button>
+                        <button class="tab-btn" data-tab="utility">Utility Function</button>
+                    </div>
+                    
+                    <div class="tab-content">
+                        <!-- Sensors Tab -->
+                        <div id="sensors-tab" class="tab-pane active">
+                            <h3>Add Sensor</h3>
+                            <form id="sensor-form" class="config-form">
+                                <div class="form-group">
+                                    <label for="sensor-type">Sensor Type:</label>
+                                    <select id="sensor-type" name="sensor-type" required>
+                                        <option value="meta_ads">Meta Ads Sensor</option>
+                                        <option value="google_ads">Google Ads Sensor</option>
+                                        <option value="custom">Custom Sensor</option>
+                                    </select>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label for="sensor-name">Sensor Name:</label>
+                                    <input type="text" id="sensor-name" name="sensor-name" placeholder="e.g., meta_ads" required>
+                                </div>
+                                
+                                <div id="meta-ads-fields" class="sensor-fields">
+                                    <div class="form-group">
+                                        <label for="access-token">Access Token:</label>
+                                        <input type="text" id="access-token" name="access-token" placeholder="Your Meta access token">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="ad-account-id">Ad Account ID:</label>
+                                        <input type="text" id="ad-account-id" name="ad-account-id" placeholder="e.g., act_123456789">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="campaign-id">Campaign ID:</label>
+                                        <input type="text" id="campaign-id" name="campaign-id" placeholder="Your campaign ID">
+                                    </div>
+                                </div>
+                                
+                                <div class="form-actions">
+                                    <button type="submit" class="primary-btn">Add Sensor</button>
+                                </div>
+                            </form>
+                            
+                            <div class="current-config">
+                                <h3>Current Sensors</h3>
+                                <div id="current-sensors" class="config-list">
+                                    <div class="no-items">No sensors configured yet.</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- State Factors Tab -->
+                        <div id="state-factors-tab" class="tab-pane">
+                            <h3>Add State Factor</h3>
+                            <form id="state-factor-form" class="config-form">
+                                <div class="form-group">
+                                    <label for="factor-name">Factor Name:</label>
+                                    <input type="text" id="factor-name" name="factor-name" placeholder="e.g., market_size" required>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label for="factor-type">Factor Type:</label>
+                                    <select id="factor-type" name="factor-type" required>
+                                        <option value="continuous">Continuous</option>
+                                        <option value="categorical">Categorical</option>
+                                        <option value="discrete">Discrete</option>
+                                    </select>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label for="factor-value">Initial Value:</label>
+                                    <input type="text" id="factor-value" name="factor-value" placeholder="e.g., 10000.0" required>
+                                </div>
+                                
+                                <!-- Continuous specific fields -->
+                                <div id="continuous-fields" class="factor-fields">
+                                    <div class="form-group">
+                                        <label for="loc">Location (Mean):</label>
+                                        <input type="number" id="loc" name="loc" placeholder="e.g., 10000.0">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="scale">Scale (Std Dev):</label>
+                                        <input type="number" id="scale" name="scale" placeholder="e.g., 1000.0">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="lower-bound">Lower Bound:</label>
+                                        <input type="number" id="lower-bound" name="lower-bound" placeholder="Optional">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="upper-bound">Upper Bound:</label>
+                                        <input type="number" id="upper-bound" name="upper-bound" placeholder="Optional">
+                                    </div>
+                                </div>
+                                
+                                <!-- Categorical specific fields -->
+                                <div id="categorical-fields" class="factor-fields" style="display: none;">
+                                    <div class="form-group">
+                                        <label for="categories">Categories (comma-separated):</label>
+                                        <input type="text" id="categories" name="categories" placeholder="e.g., low,medium,high">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="probabilities">Probabilities (comma-separated):</label>
+                                        <input type="text" id="probabilities" name="probabilities" placeholder="e.g., 0.2,0.5,0.3">
+                                    </div>
+                                </div>
+                                
+                                <!-- Discrete specific fields -->
+                                <div id="discrete-fields" class="factor-fields" style="display: none;">
+                                    <div class="form-group">
+                                        <label for="rate">Rate (for Poisson):</label>
+                                        <input type="number" id="rate" name="rate" placeholder="e.g., 5.0">
+                                    </div>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label for="depends-on">Depends On (comma-separated):</label>
+                                    <input type="text" id="depends-on" name="depends-on" placeholder="e.g., market_size,competition_level">
+                                </div>
+                                
+                                <div class="form-actions">
+                                    <button type="submit" class="primary-btn">Add State Factor</button>
+                                </div>
+                            </form>
+                            
+                            <div class="current-config">
+                                <h3>Current State Factors</h3>
+                                <div id="current-factors" class="config-list">
+                                    <div class="no-items">No state factors defined yet.</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Action Space Tab -->
+                        <div id="action-space-tab" class="tab-pane">
+                            <h3>Define Action Space</h3>
+                            <form id="action-space-form" class="config-form">
+                                <div class="form-group">
+                                    <label for="space-type">Space Type:</label>
+                                    <select id="space-type" name="space-type" required>
+                                        <option value="budget_allocation">Budget Allocation</option>
+                                        <option value="marketing">Marketing Optimization</option>
+                                        <option value="time_budget">Time Budget Allocation</option>
+                                        <option value="multi_campaign">Multi-Campaign Allocation</option>
+                                        <option value="custom">Custom</option>
+                                    </select>
+                                </div>
+                                
+                                <!-- Budget allocation fields -->
+                                <div id="budget-fields" class="space-fields">
+                                    <div class="form-group">
+                                        <label for="total-budget">Total Budget:</label>
+                                        <input type="number" id="total-budget" name="total-budget" placeholder="e.g., 1000.0">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="items">Items (comma-separated):</label>
+                                        <input type="text" id="items" name="items" placeholder="e.g., ad1,ad2,ad3">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="budget-step">Budget Step:</label>
+                                        <input type="number" id="budget-step" name="budget-step" placeholder="e.g., 100.0">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="min-budget">Minimum Budget:</label>
+                                        <input type="number" id="min-budget" name="min-budget" placeholder="e.g., 0.0">
+                                    </div>
+                                </div>
+                                
+                                <div class="form-actions">
+                                    <button type="submit" class="primary-btn">Define Action Space</button>
+                                </div>
+                            </form>
+                            
+                            <div class="current-config">
+                                <h3>Current Action Space</h3>
+                                <div id="current-action-space" class="config-list">
+                                    <div class="no-items">No action space defined yet.</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Utility Function Tab -->
+                        <div id="utility-tab" class="tab-pane">
+                            <h3>Define Utility Function</h3>
+                            <form id="utility-form" class="config-form">
+                                <div class="form-group">
+                                    <label for="utility-type">Utility Type:</label>
+                                    <select id="utility-type" name="utility-type" required>
+                                        <option value="marketing_roi">Marketing ROI</option>
+                                        <option value="constrained_marketing_roi">Constrained Marketing ROI</option>
+                                        <option value="weighted_sum">Weighted Sum</option>
+                                        <option value="multiobjective">Multi-objective</option>
+                                        <option value="custom">Custom</option>
+                                    </select>
+                                </div>
+                                
+                                <!-- Marketing ROI fields -->
+                                <div id="marketing-roi-fields" class="utility-fields">
+                                    <div class="form-group">
+                                        <label for="revenue-per-sale">Revenue Per Sale:</label>
+                                        <input type="number" id="revenue-per-sale" name="revenue-per-sale" placeholder="e.g., 50.0">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="num-days">Number of Days:</label>
+                                        <input type="number" id="num-days" name="num-days" placeholder="e.g., 1">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="ad-names">Ad Names (comma-separated):</label>
+                                        <input type="text" id="ad-names" name="ad-names" placeholder="e.g., ad1,ad2,ad3">
+                                    </div>
+                                </div>
+                                
+                                <div class="form-actions">
+                                    <button type="submit" class="primary-btn">Define Utility Function</button>
+                                </div>
+                            </form>
+                            
+                            <div class="current-config">
+                                <h3>Current Utility Function</h3>
+                                <div id="current-utility" class="config-list">
+                                    <div class="no-items">No utility function defined yet.</div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>

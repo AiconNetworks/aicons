@@ -225,6 +225,226 @@ def get_token_usage():
         logger.error(f"Error getting token usage: {str(e)}", exc_info=True)
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/configuration', methods=['GET'])
+def get_configuration():
+    """Get the current configuration of ZeroAIcon."""
+    try:
+        # Get sensors
+        sensors = []
+        if hasattr(aicon.brain, 'sensors'):
+            for name, sensor in aicon.brain.sensors.items():
+                sensors.append({
+                    'name': name,
+                    'sensor_type': sensor.__class__.__name__,
+                    'reliability': getattr(sensor, 'reliability', None)
+                })
+        
+        # Get state factors
+        state_factors = []
+        if hasattr(aicon.brain, 'state') and hasattr(aicon.brain.state, 'get_state_factors'):
+            factors = aicon.brain.state.get_state_factors()
+            for name, factor in factors.items():
+                state_factors.append({
+                    'name': name,
+                    'factor_type': factor.__class__.__name__.replace('LatentVariable', '').lower(),
+                    'value': str(factor.value)
+                })
+        
+        # Get action space
+        action_space = None
+        if aicon.brain.action_space:
+            action_space = {
+                'space_type': 'custom',  # Default
+                'dimensions': len(aicon.brain.action_space.dimensions) if hasattr(aicon.brain.action_space, 'dimensions') else 0,
+                'description': str(aicon.brain.action_space)
+            }
+        
+        # Get utility function
+        utility_function = None
+        if aicon.brain.utility_function:
+            utility_function = {
+                'utility_type': 'custom',  # Default
+                'description': str(aicon.brain.utility_function)
+            }
+        
+        return jsonify({
+            'sensors': sensors,
+            'state_factors': state_factors,
+            'action_space': action_space,
+            'utility_function': utility_function
+        })
+    
+    except Exception as e:
+        logger.error(f"Error getting configuration: {str(e)}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/add-sensor', methods=['POST'])
+def add_sensor():
+    """Add a sensor to ZeroAIcon."""
+    try:
+        data = request.json
+        sensor_type = data.get('sensor_type')
+        name = data.get('name')
+        
+        if not sensor_type or not name:
+            return jsonify({'success': False, 'error': 'Sensor type and name are required'}), 400
+        
+        # Create the appropriate sensor based on type
+        if sensor_type == 'meta_ads':
+            from aicons.bayesbrainGPT.sensors.meta_s.meta_ads_sales_sensor import MetaAdsSalesSensor
+            
+            # Get required parameters
+            access_token = data.get('access_token')
+            ad_account_id = data.get('ad_account_id')
+            campaign_id = data.get('campaign_id')
+            api_version = data.get('api_version', 'v18.0')
+            time_granularity = data.get('time_granularity', 'hour')
+            reliability = data.get('reliability', 0.9)
+            
+            if not access_token or not ad_account_id or not campaign_id:
+                return jsonify({
+                    'success': False, 
+                    'error': 'Meta Ads sensor requires access_token, ad_account_id, and campaign_id'
+                }), 400
+            
+            # Create the sensor
+            sensor = MetaAdsSalesSensor(
+                name=name,
+                reliability=reliability,
+                access_token=access_token,
+                ad_account_id=ad_account_id,
+                campaign_id=campaign_id,
+                api_version=api_version,
+                time_granularity=time_granularity
+            )
+            
+            # Add the sensor to AIcon
+            aicon.add_sensor(name, sensor)
+            
+            return jsonify({'success': True})
+        
+        else:
+            return jsonify({'success': False, 'error': f'Unsupported sensor type: {sensor_type}'}), 400
+    
+    except Exception as e:
+        logger.error(f"Error adding sensor: {str(e)}", exc_info=True)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/add-state-factor', methods=['POST'])
+def add_state_factor():
+    """Add a state factor to ZeroAIcon."""
+    try:
+        data = request.json
+        name = data.get('name')
+        factor_type = data.get('factor_type')
+        value = data.get('value')
+        params = data.get('params', {})
+        relationships = data.get('relationships', {'depends_on': []})
+        
+        if not name or not factor_type or value is None:
+            return jsonify({
+                'success': False, 
+                'error': 'Name, factor_type, and value are required'
+            }), 400
+        
+        # Add the state factor
+        factor = aicon.add_state_factor(
+            name=name,
+            factor_type=factor_type,
+            value=value,
+            params=params,
+            relationships=relationships
+        )
+        
+        return jsonify({'success': True})
+    
+    except Exception as e:
+        logger.error(f"Error adding state factor: {str(e)}", exc_info=True)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/define-action-space', methods=['POST'])
+def define_action_space():
+    """Define an action space for ZeroAIcon."""
+    try:
+        data = request.json
+        space_type = data.get('space_type')
+        
+        if not space_type:
+            return jsonify({'success': False, 'error': 'Space type is required'}), 400
+        
+        # Define the action space based on type
+        if space_type == 'budget_allocation':
+            total_budget = data.get('total_budget', 1000.0)
+            items = data.get('items', [])
+            budget_step = data.get('budget_step', 100.0)
+            min_budget = data.get('min_budget', 0.0)
+            
+            # Validate parameters
+            if not items:
+                return jsonify({'success': False, 'error': 'Items list is required'}), 400
+            
+            # Define the action space
+            action_space = aicon.define_action_space(
+                space_type="budget_allocation",
+                total_budget=total_budget,
+                items=items,
+                budget_step=budget_step,
+                min_budget=min_budget
+            )
+            
+            return jsonify({'success': True})
+        
+        else:
+            return jsonify({'success': False, 'error': f'Unsupported action space type: {space_type}'}), 400
+    
+    except Exception as e:
+        logger.error(f"Error defining action space: {str(e)}", exc_info=True)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/define-utility-function', methods=['POST'])
+def define_utility_function():
+    """Define a utility function for ZeroAIcon."""
+    try:
+        data = request.json
+        utility_type = data.get('utility_type')
+        
+        if not utility_type:
+            return jsonify({'success': False, 'error': 'Utility type is required'}), 400
+        
+        # Ensure we have an action space first
+        if not aicon.brain.action_space:
+            return jsonify({
+                'success': False, 
+                'error': 'Action space must be defined before defining a utility function'
+            }), 400
+        
+        # Define the utility function based on type
+        if utility_type == 'marketing_roi':
+            revenue_per_sale = data.get('revenue_per_sale', 50.0)
+            num_days = data.get('num_days', 1)
+            ad_names = data.get('ad_names', [])
+            
+            # Validate parameters
+            if not ad_names:
+                return jsonify({'success': False, 'error': 'Ad names list is required'}), 400
+            
+            # Define the utility function
+            utility = aicon.define_utility_function(
+                utility_type="marketing_roi",
+                revenue_per_sale=revenue_per_sale,
+                num_days=num_days,
+                ad_names=ad_names
+            )
+            
+            return jsonify({'success': True})
+        
+        else:
+            return jsonify({'success': False, 'error': f'Unsupported utility function type: {utility_type}'}), 400
+    
+    except Exception as e:
+        logger.error(f"Error defining utility function: {str(e)}", exc_info=True)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 def run_server(host='0.0.0.0', port=8000, debug=False):
     """Run the Flask server."""
     logger.info(f"Starting ZeroAIcon Chat Server on {host}:{port}")

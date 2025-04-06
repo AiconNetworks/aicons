@@ -16,7 +16,29 @@
   let typingIndicator;
   let contextWindowBtn;
   let contextWindowPanel;
-  let closeBtn;
+  let configBtn;
+  let configPanel;
+  let closeBtns;
+  let tabBtns;
+  let tabPanes;
+  
+  // Form Elements
+  let sensorForm;
+  let stateFactorForm;
+  let actionSpaceForm;
+  let utilityForm;
+  
+  // State for dynamically showing/hiding form fields
+  let factorTypeSelect;
+  let spaceTypeSelect;
+  let utilityTypeSelect;
+  let sensorTypeSelect;
+  
+  // Current Configuration
+  let currentSensors = [];
+  let currentFactors = [];
+  let currentActionSpace = null;
+  let currentUtility = null;
   
   // Initialize Markdown parser
   const md = window.markdownit({
@@ -46,17 +68,72 @@
     typingIndicator = id("typing-indicator");
     contextWindowBtn = id("context-window-btn");
     contextWindowPanel = id("context-window-panel");
-    closeBtn = contextWindowPanel.querySelector(".close-btn");
+    configBtn = id("config-btn");
+    configPanel = id("config-panel");
+    
+    // Get all close buttons
+    closeBtns = document.querySelectorAll(".close-btn");
+    
+    // Get tabs elements
+    tabBtns = document.querySelectorAll(".tab-btn");
+    tabPanes = document.querySelectorAll(".tab-pane");
+    
+    // Get form elements
+    sensorForm = id("sensor-form");
+    stateFactorForm = id("state-factor-form");
+    actionSpaceForm = id("action-space-form");
+    utilityForm = id("utility-form");
+    
+    // Get dynamic form selects
+    factorTypeSelect = id("factor-type");
+    spaceTypeSelect = id("space-type");
+    utilityTypeSelect = id("utility-type");
+    sensorTypeSelect = id("sensor-type");
     
     // Set up event listeners
     sendButton.addEventListener("click", handleSendMessage);
     messageInput.addEventListener("keypress", handleKeyPress);
     clearButton.addEventListener("click", handleClearChat);
     contextWindowBtn.addEventListener("click", openContextWindow);
-    closeBtn.addEventListener("click", closeContextWindow);
+    configBtn.addEventListener("click", openConfigPanel);
+    
+    // Setup close buttons
+    closeBtns.forEach(btn => {
+      btn.addEventListener("click", function() {
+        const modal = findParentWithClass(btn, "modal");
+        if (modal) {
+          modal.style.display = "none";
+        }
+      });
+    });
+    
+    // Setup tab buttons
+    tabBtns.forEach(btn => {
+      btn.addEventListener("click", function() {
+        const tabName = btn.getAttribute("data-tab");
+        switchTab(tabName);
+      });
+    });
+    
+    // Setup forms
+    if (sensorForm) sensorForm.addEventListener("submit", handleSensorForm);
+    if (stateFactorForm) stateFactorForm.addEventListener("submit", handleStateFactorForm);
+    if (actionSpaceForm) actionSpaceForm.addEventListener("submit", handleActionSpaceForm);
+    if (utilityForm) utilityForm.addEventListener("submit", handleUtilityForm);
+    
+    // Setup dynamic form fields
+    if (factorTypeSelect) factorTypeSelect.addEventListener("change", toggleFactorFields);
+    if (spaceTypeSelect) spaceTypeSelect.addEventListener("change", toggleSpaceFields);
+    if (utilityTypeSelect) utilityTypeSelect.addEventListener("change", toggleUtilityFields);
+    if (sensorTypeSelect) sensorTypeSelect.addEventListener("change", toggleSensorFields);
+    
+    // Setup window click for modals
     window.addEventListener("click", function(event) {
       if (event.target === contextWindowPanel) {
-        closeContextWindow();
+        contextWindowPanel.style.display = "none";
+      }
+      if (event.target === configPanel) {
+        configPanel.style.display = "none";
       }
     });
     
@@ -68,6 +145,9 @@
     
     // Load initial token usage
     loadTokenUsage();
+    
+    // Load initial configuration
+    loadConfiguration();
   }
 
   /**
@@ -597,5 +677,496 @@
    */
   function id(elementId) {
     return document.getElementById(elementId);
+  }
+
+  /**
+   * Opens the configuration panel
+   */
+  function openConfigPanel() {
+    loadConfiguration();
+    configPanel.style.display = "block";
+  }
+  
+  /**
+   * Switches active tab in configuration panel
+   */
+  function switchTab(tabName) {
+    // Update tab buttons
+    tabBtns.forEach(btn => {
+      if (btn.getAttribute("data-tab") === tabName) {
+        btn.classList.add("active");
+      } else {
+        btn.classList.remove("active");
+      }
+    });
+    
+    // Update tab panes
+    tabPanes.forEach(pane => {
+      if (pane.id === tabName + "-tab") {
+        pane.classList.add("active");
+      } else {
+        pane.classList.remove("active");
+      }
+    });
+  }
+  
+  /**
+   * Toggles factor fields based on factor type
+   */
+  function toggleFactorFields() {
+    const factorType = factorTypeSelect.value;
+    const continuousFields = id("continuous-fields");
+    const categoricalFields = id("categorical-fields");
+    const discreteFields = id("discrete-fields");
+    
+    // Hide all first
+    continuousFields.style.display = "none";
+    categoricalFields.style.display = "none";
+    discreteFields.style.display = "none";
+    
+    // Show the selected one
+    if (factorType === "continuous") {
+      continuousFields.style.display = "block";
+    } else if (factorType === "categorical") {
+      categoricalFields.style.display = "block";
+    } else if (factorType === "discrete") {
+      discreteFields.style.display = "block";
+    }
+  }
+  
+  /**
+   * Toggles space fields based on space type
+   */
+  function toggleSpaceFields() {
+    // You can add more specific logic here as needed
+    const spaceType = spaceTypeSelect.value;
+    const budgetFields = id("budget-fields");
+    
+    if (spaceType === "budget_allocation" || spaceType === "marketing") {
+      budgetFields.style.display = "block";
+    } else {
+      budgetFields.style.display = "none";
+    }
+  }
+  
+  /**
+   * Toggles utility fields based on utility type
+   */
+  function toggleUtilityFields() {
+    const utilityType = utilityTypeSelect.value;
+    const marketingROIFields = id("marketing-roi-fields");
+    
+    if (utilityType === "marketing_roi") {
+      marketingROIFields.style.display = "block";
+    } else {
+      marketingROIFields.style.display = "none";
+    }
+  }
+  
+  /**
+   * Toggles sensor fields based on sensor type
+   */
+  function toggleSensorFields() {
+    const sensorType = sensorTypeSelect.value;
+    const metaAdsFields = id("meta-ads-fields");
+    
+    if (sensorType === "meta_ads") {
+      metaAdsFields.style.display = "block";
+    } else {
+      metaAdsFields.style.display = "none";
+    }
+  }
+  
+  /**
+   * Loads the current configuration from the server
+   */
+  function loadConfiguration() {
+    fetch("/api/configuration")
+      .then(response => response.json())
+      .then(data => {
+        // Update UI with configuration data
+        updateConfigurationUI(data);
+      })
+      .catch(error => {
+        console.error("Error loading configuration:", error);
+      });
+  }
+  
+  /**
+   * Updates the configuration UI with the loaded data
+   */
+  function updateConfigurationUI(data) {
+    // Store current configuration
+    currentSensors = data.sensors || [];
+    currentFactors = data.state_factors || [];
+    currentActionSpace = data.action_space || null;
+    currentUtility = data.utility_function || null;
+    
+    // Update current sensors display
+    updateSensorsDisplay();
+    
+    // Update current state factors display
+    updateFactorsDisplay();
+    
+    // Update current action space display
+    updateActionSpaceDisplay();
+    
+    // Update current utility function display
+    updateUtilityDisplay();
+  }
+  
+  /**
+   * Updates the sensors display
+   */
+  function updateSensorsDisplay() {
+    const container = id("current-sensors");
+    
+    if (!currentSensors || currentSensors.length === 0) {
+      container.innerHTML = '<div class="no-items">No sensors configured yet.</div>';
+      return;
+    }
+    
+    let html = '';
+    currentSensors.forEach(sensor => {
+      html += `
+        <div class="config-item">
+          <div class="config-item-header">
+            <h4>${sensor.name}</h4>
+            <span class="config-item-type">${sensor.sensor_type}</span>
+          </div>
+          <div class="config-item-body">
+            <pre>${JSON.stringify(sensor, null, 2)}</pre>
+          </div>
+        </div>
+      `;
+    });
+    
+    container.innerHTML = html;
+  }
+  
+  /**
+   * Updates the state factors display
+   */
+  function updateFactorsDisplay() {
+    const container = id("current-factors");
+    
+    if (!currentFactors || currentFactors.length === 0) {
+      container.innerHTML = '<div class="no-items">No state factors defined yet.</div>';
+      return;
+    }
+    
+    let html = '';
+    currentFactors.forEach(factor => {
+      html += `
+        <div class="config-item">
+          <div class="config-item-header">
+            <h4>${factor.name}</h4>
+            <span class="config-item-type">${factor.factor_type}</span>
+          </div>
+          <div class="config-item-body">
+            <pre>${JSON.stringify(factor, null, 2)}</pre>
+          </div>
+        </div>
+      `;
+    });
+    
+    container.innerHTML = html;
+  }
+  
+  /**
+   * Updates the action space display
+   */
+  function updateActionSpaceDisplay() {
+    const container = id("current-action-space");
+    
+    if (!currentActionSpace) {
+      container.innerHTML = '<div class="no-items">No action space defined yet.</div>';
+      return;
+    }
+    
+    let html = `
+      <div class="config-item">
+        <div class="config-item-header">
+          <h4>${currentActionSpace.space_type} Action Space</h4>
+          <span class="config-item-type">Action Space</span>
+        </div>
+        <div class="config-item-body">
+          <pre>${JSON.stringify(currentActionSpace, null, 2)}</pre>
+        </div>
+      </div>
+    `;
+    
+    container.innerHTML = html;
+  }
+  
+  /**
+   * Updates the utility function display
+   */
+  function updateUtilityDisplay() {
+    const container = id("current-utility");
+    
+    if (!currentUtility) {
+      container.innerHTML = '<div class="no-items">No utility function defined yet.</div>';
+      return;
+    }
+    
+    let html = `
+      <div class="config-item">
+        <div class="config-item-header">
+          <h4>${currentUtility.utility_type} Utility</h4>
+          <span class="config-item-type">Utility Function</span>
+        </div>
+        <div class="config-item-body">
+          <pre>${JSON.stringify(currentUtility, null, 2)}</pre>
+        </div>
+      </div>
+    `;
+    
+    container.innerHTML = html;
+  }
+
+  /**
+   * Handles the sensor form submission
+   */
+  function handleSensorForm(event) {
+    event.preventDefault();
+    
+    const sensorType = id("sensor-type").value;
+    const sensorName = id("sensor-name").value;
+    
+    let sensorData = {
+      sensor_type: sensorType,
+      name: sensorName
+    };
+    
+    // Add sensor-specific fields
+    if (sensorType === "meta_ads") {
+      sensorData.access_token = id("access-token").value;
+      sensorData.ad_account_id = id("ad-account-id").value;
+      sensorData.campaign_id = id("campaign-id").value;
+      sensorData.api_version = "v18.0";
+      sensorData.time_granularity = "hour";
+      sensorData.reliability = 0.9;
+    }
+    
+    // Send to server
+    fetch("/api/add-sensor", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(sensorData)
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        // Reset form
+        sensorForm.reset();
+        
+        // Reload configuration
+        loadConfiguration();
+        
+        // Show success message
+        alert("Sensor added successfully!");
+      } else {
+        alert("Error adding sensor: " + data.error);
+      }
+    })
+    .catch(error => {
+      console.error("Error adding sensor:", error);
+      alert("Error adding sensor. See console for details.");
+    });
+  }
+  
+  /**
+   * Handles the state factor form submission
+   */
+  function handleStateFactorForm(event) {
+    event.preventDefault();
+    
+    const factorName = id("factor-name").value;
+    const factorType = id("factor-type").value;
+    const factorValue = id("factor-value").value;
+    const dependsOn = id("depends-on").value;
+    
+    // Parse the value based on type
+    let parsedValue;
+    if (factorType === "continuous") {
+      parsedValue = parseFloat(factorValue);
+    } else if (factorType === "discrete") {
+      parsedValue = parseInt(factorValue);
+    } else {
+      parsedValue = factorValue;
+    }
+    
+    // Prepare the factor data
+    let factorData = {
+      name: factorName,
+      factor_type: factorType,
+      value: parsedValue,
+      params: {},
+      relationships: {
+        depends_on: dependsOn ? dependsOn.split(",").map(item => item.trim()) : []
+      }
+    };
+    
+    // Add type-specific parameters
+    if (factorType === "continuous") {
+      factorData.params.loc = parseFloat(id("loc").value);
+      factorData.params.scale = parseFloat(id("scale").value);
+      
+      // Add constraints if provided
+      const lowerBound = id("lower-bound").value;
+      const upperBound = id("upper-bound").value;
+      if (lowerBound || upperBound) {
+        factorData.params.constraints = {};
+        if (lowerBound) factorData.params.constraints.lower = parseFloat(lowerBound);
+        if (upperBound) factorData.params.constraints.upper = parseFloat(upperBound);
+      }
+    } else if (factorType === "categorical") {
+      const categories = id("categories").value.split(",").map(item => item.trim());
+      const probabilities = id("probabilities").value.split(",").map(item => parseFloat(item.trim()));
+      
+      factorData.params.categories = categories;
+      factorData.params.probs = probabilities;
+    } else if (factorType === "discrete") {
+      factorData.params.rate = parseFloat(id("rate").value);
+    }
+    
+    // Send to server
+    fetch("/api/add-state-factor", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(factorData)
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        // Reset form
+        stateFactorForm.reset();
+        
+        // Reset factor fields
+        toggleFactorFields();
+        
+        // Reload configuration
+        loadConfiguration();
+        
+        // Show success message
+        alert("State factor added successfully!");
+      } else {
+        alert("Error adding state factor: " + data.error);
+      }
+    })
+    .catch(error => {
+      console.error("Error adding state factor:", error);
+      alert("Error adding state factor. See console for details.");
+    });
+  }
+  
+  /**
+   * Handles the action space form submission
+   */
+  function handleActionSpaceForm(event) {
+    event.preventDefault();
+    
+    const spaceType = id("space-type").value;
+    
+    // Prepare the action space data
+    let spaceData = {
+      space_type: spaceType
+    };
+    
+    // Add type-specific parameters
+    if (spaceType === "budget_allocation" || spaceType === "marketing") {
+      spaceData.total_budget = parseFloat(id("total-budget").value);
+      spaceData.items = id("items").value.split(",").map(item => item.trim());
+      spaceData.budget_step = parseFloat(id("budget-step").value);
+      spaceData.min_budget = parseFloat(id("min-budget").value);
+    }
+    
+    // Send to server
+    fetch("/api/define-action-space", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(spaceData)
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        // Reset form
+        actionSpaceForm.reset();
+        
+        // Reset space fields
+        toggleSpaceFields();
+        
+        // Reload configuration
+        loadConfiguration();
+        
+        // Show success message
+        alert("Action space defined successfully!");
+      } else {
+        alert("Error defining action space: " + data.error);
+      }
+    })
+    .catch(error => {
+      console.error("Error defining action space:", error);
+      alert("Error defining action space. See console for details.");
+    });
+  }
+  
+  /**
+   * Handles the utility function form submission
+   */
+  function handleUtilityForm(event) {
+    event.preventDefault();
+    
+    const utilityType = id("utility-type").value;
+    
+    // Prepare the utility function data
+    let utilityData = {
+      utility_type: utilityType
+    };
+    
+    // Add type-specific parameters
+    if (utilityType === "marketing_roi") {
+      utilityData.revenue_per_sale = parseFloat(id("revenue-per-sale").value);
+      utilityData.num_days = parseInt(id("num-days").value);
+      utilityData.ad_names = id("ad-names").value.split(",").map(item => item.trim());
+    }
+    
+    // Send to server
+    fetch("/api/define-utility-function", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(utilityData)
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        // Reset form
+        utilityForm.reset();
+        
+        // Reset utility fields
+        toggleUtilityFields();
+        
+        // Reload configuration
+        loadConfiguration();
+        
+        // Show success message
+        alert("Utility function defined successfully!");
+      } else {
+        alert("Error defining utility function: " + data.error);
+      }
+    })
+    .catch(error => {
+      console.error("Error defining utility function:", error);
+      alert("Error defining utility function. See console for details.");
+    });
   }
 })(); 
