@@ -407,28 +407,111 @@ class ZeroAIcon:
     
     async def make_inference(self, prompt: str) -> str:
         """Make inference using configured LLM."""
-        # Prepare context with all components
-        context = {
-            "state": self.get_state_representation(),
-            "utility_function": str(self.brain.utility_function) if self.brain.utility_function else None,
-            "action_space": str(self.brain.action_space),
-            "prompt": prompt
-        }
-        
-        # Update inference token usage
-        self._update_token_usage("inference", json.dumps(context))
-        
-        # Get remaining tokens
-        remaining = self.get_remaining_tokens()
-        if remaining < 1000:  # Safety margin
-            logger.warning("Low remaining tokens in context window")
-        
-        # Make inference using LLM
-        full_response = ""
-        async for chunk in self.llm.generate(json.dumps(context)):
-            full_response += chunk
-        
-        return full_response.strip()
+        try:
+            logger.info(f"Starting inference with prompt: {prompt[:50]}...")
+            
+            # Prepare context with all components
+            context = {
+                "state": self.get_state_representation(),
+                "utility_function": str(self.brain.utility_function) if self.brain.utility_function else None,
+                "action_space": str(self.brain.action_space),
+                "prompt": prompt
+            }
+            
+            # Update inference token usage
+            context_str = json.dumps(context)
+            self._update_token_usage("inference", context_str)
+            logger.info(f"Inference context prepared, size: {len(context_str)} characters")
+            
+            # Get remaining tokens
+            remaining = self.get_remaining_tokens()
+            if remaining < 1000:  # Safety margin
+                logger.warning(f"Low remaining tokens in context window: {remaining}")
+            
+            # Make inference using LLM
+            logger.info(f"Calling LLM ({self.model_name}) for inference")
+            full_response = ""
+            accumulated_chunk = ""
+            start_time = time.time()
+            
+            try:
+                # Set a timeout for the entire operation
+                timeout_seconds = 60  # Adjust as needed
+                logger.info(f"Setting request timeout to {timeout_seconds} seconds")
+                
+                # Create a task with timeout
+                async def generate_with_timeout():
+                    nonlocal full_response, accumulated_chunk
+                    chunk_count = 0
+                    
+                    async for chunk in self.llm.generate(context_str):
+                        chunk_count += 1
+                        full_response += chunk
+                        accumulated_chunk += chunk
+                        
+                        # Print meaningful segments (sentences, paragraphs) or after accumulating enough content
+                        if '\n' in accumulated_chunk or len(accumulated_chunk) > 50 or '.' in accumulated_chunk:
+                            logger.info(f"Message segment: {accumulated_chunk}")
+                            accumulated_chunk = ""
+                        
+                        # Log progress periodically
+                        if len(full_response) % 200 == 0:
+                            logger.info(f"Received {len(full_response)} characters so far")
+                
+                try:
+                    # Run with timeout
+                    await asyncio.wait_for(generate_with_timeout(), timeout=timeout_seconds)
+                    
+                    # Log any remaining accumulated chunk
+                    if accumulated_chunk:
+                        logger.info(f"Final segment: {accumulated_chunk}")
+                        
+                except asyncio.TimeoutError:
+                    logger.error(f"LLM request timed out after {timeout_seconds} seconds")
+                    logger.info(f"Partial response at timeout: {full_response}")
+                    return f"Error: Request timed out after {timeout_seconds} seconds. Partial response: {full_response}"
+                except asyncio.CancelledError as ce:
+                    partial_response = full_response if full_response else "No response received"
+                    logger.error(f"Request was cancelled. Partial response: {partial_response[:100]}...")
+                    logger.info(f"Full partial response: {partial_response}")
+                    raise RuntimeError(f"Request cancelled. Partial: {partial_response[:100]}...") from ce
+                
+            except Exception as e:
+                logger.error(f"Error during LLM generation: {str(e)}", exc_info=True)
+                # Try to return any partial response
+                if full_response:
+                    logger.info(f"Returning partial response of {len(full_response)} characters: {full_response}")
+                    return f"Error occurred, but partial response available: {full_response}"
+                raise
+            
+            elapsed_time = time.time() - start_time
+            logger.info(f"Inference completed in {elapsed_time:.2f}s, response length: {len(full_response)} chars")
+            logger.info(f"Complete response: {full_response}")
+            
+            # Process the response to remove the thinking part
+            processed_response = full_response
+            
+            # Remove the <think>...</think> section if present
+            think_start = processed_response.find("<think>")
+            think_end = processed_response.find("</think>")
+            
+            if think_start != -1 and think_end != -1 and think_end > think_start:
+                # Extract the content before <think> and after </think>
+                before_think = processed_response[:think_start].strip()
+                after_think = processed_response[think_end + 8:].strip()  # 8 is the length of "</think>"
+                
+                # Combine the parts, with space in between if both exist
+                if before_think and after_think:
+                    processed_response = before_think + " " + after_think
+                else:
+                    processed_response = before_think + after_think
+                
+                logger.info(f"Removed thinking process. Final response: {processed_response}")
+            
+            return processed_response.strip()
+        except Exception as e:
+            logger.error(f"Error in make_inference: {str(e)}", exc_info=True)
+            return f"Error: {str(e)}"
     
     def get_state_representation_text(self) -> str:
         """Get the actual text content of the state representation."""
