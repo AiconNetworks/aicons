@@ -802,6 +802,9 @@
     currentActionSpace = data.action_space || null;
     currentUtility = data.utility_function || null;
     
+    // Update review tab
+    updateReviewTab();
+    
     // Update current sensors display
     updateSensorsDisplay();
     
@@ -813,6 +816,124 @@
     
     // Update current utility function display
     updateUtilityDisplay();
+  }
+  
+  /**
+   * Updates the review tab with all configurations
+   */
+  function updateReviewTab() {
+    // Update sensors count
+    const sensorsCount = id("sensors-count");
+    sensorsCount.textContent = currentSensors.length;
+    
+    // Update factors count
+    const factorsCount = id("factors-count");
+    factorsCount.textContent = currentFactors.length;
+    
+    // Update sensors dashboard
+    const sensorsDashboard = id("dashboard-sensors");
+    if (!currentSensors || currentSensors.length === 0) {
+      sensorsDashboard.innerHTML = '<div class="empty-message">No sensors configured yet</div>';
+    } else {
+      let html = '';
+      currentSensors.forEach(sensor => {
+        html += `
+          <div class="dashboard-item">
+            <div class="dashboard-item-header">
+              <div class="dashboard-item-name">${sensor.name}</div>
+              <div class="dashboard-item-type">${sensor.sensor_type}</div>
+            </div>
+            <div class="dashboard-item-details">
+              Reliability: ${sensor.reliability || 'N/A'}
+              <button class="toggle-details-btn" data-target="sensor-${sensor.name}">Show Details</button>
+              <pre class="details-content" id="sensor-${sensor.name}" style="display: none;">${JSON.stringify(sensor, null, 2)}</pre>
+            </div>
+          </div>
+        `;
+      });
+      sensorsDashboard.innerHTML = html;
+    }
+    
+    // Update factors dashboard
+    const factorsDashboard = id("dashboard-factors");
+    if (!currentFactors || currentFactors.length === 0) {
+      factorsDashboard.innerHTML = '<div class="empty-message">No state factors defined yet</div>';
+    } else {
+      let html = '';
+      currentFactors.forEach(factor => {
+        html += `
+          <div class="dashboard-item">
+            <div class="dashboard-item-header">
+              <div class="dashboard-item-name">${factor.name}</div>
+              <div class="dashboard-item-type">${factor.factor_type}</div>
+            </div>
+            <div class="dashboard-item-details">
+              Value: ${factor.value}
+              <button class="toggle-details-btn" data-target="factor-${factor.name}">Show Details</button>
+              <pre class="details-content" id="factor-${factor.name}" style="display: none;">${JSON.stringify(factor, null, 2)}</pre>
+            </div>
+          </div>
+        `;
+      });
+      factorsDashboard.innerHTML = html;
+    }
+    
+    // Update action space dashboard
+    const actionSpaceDashboard = id("dashboard-action-space");
+    if (!currentActionSpace) {
+      actionSpaceDashboard.innerHTML = '<div class="empty-message">No action space defined yet</div>';
+    } else {
+      let html = `
+        <div class="dashboard-item action-space">
+          <div class="dashboard-item-header">
+            <div class="dashboard-item-name">${currentActionSpace.space_type || 'Custom'} Action Space</div>
+            <div class="dashboard-item-type">Action Space</div>
+          </div>
+          <div class="dashboard-item-details">
+            <span>${currentActionSpace.description || 'Dimensions: ' + (currentActionSpace.dimensions || 'N/A')}</span>
+            <button class="toggle-details-btn" data-target="action-space-details">Show Details</button>
+            <pre class="details-content" id="action-space-details" style="display: none;">${JSON.stringify(currentActionSpace, null, 2)}</pre>
+          </div>
+        </div>
+      `;
+      actionSpaceDashboard.innerHTML = html;
+    }
+    
+    // Update utility dashboard
+    const utilityDashboard = id("dashboard-utility");
+    if (!currentUtility) {
+      utilityDashboard.innerHTML = '<div class="empty-message">No utility function defined yet</div>';
+    } else {
+      let html = `
+        <div class="dashboard-item utility">
+          <div class="dashboard-item-header">
+            <div class="dashboard-item-name">${currentUtility.utility_type || 'Custom'} Utility</div>
+            <div class="dashboard-item-type">Utility Function</div>
+          </div>
+          <div class="dashboard-item-details">
+            <span>${currentUtility.description || ''}</span>
+            <button class="toggle-details-btn" data-target="utility-details">Show Details</button>
+            <pre class="details-content" id="utility-details" style="display: none;">${JSON.stringify(currentUtility, null, 2)}</pre>
+          </div>
+        </div>
+      `;
+      utilityDashboard.innerHTML = html;
+    }
+    
+    // Add event listeners to toggle detail buttons
+    document.querySelectorAll('.toggle-details-btn').forEach(btn => {
+      btn.addEventListener('click', function() {
+        const targetId = this.getAttribute('data-target');
+        const targetElem = id(targetId);
+        if (targetElem.style.display === 'none') {
+          targetElem.style.display = 'block';
+          this.textContent = 'Hide Details';
+        } else {
+          targetElem.style.display = 'none';
+          this.textContent = 'Show Details';
+        }
+      });
+    });
   }
   
   /**
@@ -1041,7 +1162,14 @@
       },
       body: JSON.stringify(factorData)
     })
-    .then(response => response.json())
+    .then(response => {
+      if (!response.ok) {
+        return response.json().then(data => {
+          throw new Error(data.error || `Error: ${response.status} ${response.statusText}`);
+        });
+      }
+      return response.json();
+    })
     .then(data => {
       if (data.success) {
         // Reset form
@@ -1061,7 +1189,7 @@
     })
     .catch(error => {
       console.error("Error adding state factor:", error);
-      alert("Error adding state factor. See console for details.");
+      alert("Error adding state factor: " + error.message);
     });
   }
   

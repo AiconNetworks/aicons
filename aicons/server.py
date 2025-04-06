@@ -247,7 +247,7 @@ def get_configuration():
                 state_factors.append({
                     'name': name,
                     'factor_type': factor.__class__.__name__.replace('LatentVariable', '').lower(),
-                    'value': str(factor.value)
+                    'value': str(factor.value) if hasattr(factor, 'value') else str(factor.get('value', 'N/A'))
                 })
         
         # Get action space
@@ -347,16 +347,46 @@ def add_state_factor():
                 'error': 'Name, factor_type, and value are required'
             }), 400
         
-        # Add the state factor
-        factor = aicon.add_state_factor(
-            name=name,
-            factor_type=factor_type,
-            value=value,
-            params=params,
-            relationships=relationships
-        )
+        logger.info(f"Adding state factor: {name}, type: {factor_type}, value: {value}")
+        logger.info(f"Parameters: {params}")
+        logger.info(f"Relationships: {relationships}")
         
-        return jsonify({'success': True})
+        # Add the state factor
+        try:
+            factor = aicon.add_state_factor(
+                name=name,
+                factor_type=factor_type,
+                value=value,
+                params=params,
+                relationships=relationships
+            )
+            
+            return jsonify({'success': True})
+            
+        except TypeError as e:
+            logger.error(f"Type error when adding state factor: {str(e)}", exc_info=True)
+            return jsonify({
+                'success': False, 
+                'error': f"Parameter type error: {str(e)}"
+            }), 400
+        except ValueError as e:
+            logger.error(f"Value error when adding state factor: {str(e)}", exc_info=True)
+            return jsonify({
+                'success': False, 
+                'error': f"Invalid value: {str(e)}"
+            }), 400
+        except AttributeError as e:
+            logger.error(f"Attribute error when adding state factor: {str(e)}", exc_info=True)
+            return jsonify({
+                'success': False, 
+                'error': f"Missing attribute: {str(e)}"
+            }), 400
+        except Exception as e:
+            logger.error(f"Unexpected error adding state factor: {str(e)}", exc_info=True)
+            return jsonify({
+                'success': False, 
+                'error': f"Failed to add state factor: {str(e)}"
+            }), 500
     
     except Exception as e:
         logger.error(f"Error adding state factor: {str(e)}", exc_info=True)

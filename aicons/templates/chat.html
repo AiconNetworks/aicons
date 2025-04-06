@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ZeroAIcon Chat</title>
+    <title>Noob Noob</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/chat.css') }}">
     <!-- Add Markdown-it for Markdown rendering -->
     <script src="https://cdn.jsdelivr.net/npm/markdown-it@13.0.1/dist/markdown-it.min.js"></script>
 </head>
 <body>
     <header>
-        <div>ZeroAIcon Chat</div>
+        <div>Noob Noob I</div>
         <div class="header-controls">
             <button id="config-btn" class="header-button" title="Configure AIcon">
                 <span>Configure</span>
@@ -80,15 +80,50 @@
                 </div>
                 <div class="modal-body">
                     <div class="config-tabs">
-                        <button class="tab-btn active" data-tab="sensors">Sensors</button>
-                        <button class="tab-btn" data-tab="state-factors">State Factors</button>
+                        <button class="tab-btn active" data-tab="review">Review</button>
+                        <button class="tab-btn" data-tab="sensors">Sensors</button>
+                        <button class="tab-btn" data-tab="factors">State Factors</button>
                         <button class="tab-btn" data-tab="action-space">Action Space</button>
                         <button class="tab-btn" data-tab="utility">Utility Function</button>
                     </div>
                     
                     <div class="tab-content">
+                        <!-- Review Tab -->
+                        <div id="review-tab" class="tab-pane active">
+                            <h3>AIcon Configuration Review</h3>
+                            <div class="dashboard-container">
+                                <div class="dashboard-section">
+                                    <h4>Sensors <span class="count-badge" id="sensors-count">0</span></h4>
+                                    <div class="dashboard-items" id="dashboard-sensors">
+                                        <div class="loading">Loading...</div>
+                                    </div>
+                                </div>
+                                
+                                <div class="dashboard-section">
+                                    <h4>State Factors <span class="count-badge" id="factors-count">0</span></h4>
+                                    <div class="dashboard-items" id="dashboard-factors">
+                                        <div class="loading">Loading...</div>
+                                    </div>
+                                </div>
+                                
+                                <div class="dashboard-section">
+                                    <h4>Action Space</h4>
+                                    <div class="dashboard-items" id="dashboard-action-space">
+                                        <div class="loading">Loading...</div>
+                                    </div>
+                                </div>
+                                
+                                <div class="dashboard-section">
+                                    <h4>Utility Function</h4>
+                                    <div class="dashboard-items" id="dashboard-utility">
+                                        <div class="loading">Loading...</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
                         <!-- Sensors Tab -->
-                        <div id="sensors-tab" class="tab-pane active">
+                        <div id="sensors-tab" class="tab-pane">
                             <h3>Add Sensor</h3>
                             <form id="sensor-form" class="config-form">
                                 <div class="form-group">
@@ -134,7 +169,7 @@
                         </div>
                         
                         <!-- State Factors Tab -->
-                        <div id="state-factors-tab" class="tab-pane">
+                        <div id="factors-tab" class="tab-pane">
                             <h3>Add State Factor</h3>
                             <form id="state-factor-form" class="config-form">
                                 <div class="form-group">
