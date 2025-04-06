@@ -170,83 +170,18 @@
                         
                         <!-- State Factors Tab -->
                         <div id="factors-tab" class="tab-pane">
-                            <h3>Add State Factor</h3>
-                            <form id="state-factor-form" class="config-form">
-                                <div class="form-group">
-                                    <label for="factor-name">Factor Name:</label>
-                                    <input type="text" id="factor-name" name="factor-name" placeholder="e.g., market_size" required>
-                                </div>
-                                
-                                <div class="form-group">
-                                    <label for="factor-type">Factor Type:</label>
-                                    <select id="factor-type" name="factor-type" required>
-                                        <option value="continuous">Continuous</option>
-                                        <option value="categorical">Categorical</option>
-                                        <option value="discrete">Discrete</option>
-                                    </select>
-                                </div>
-                                
-                                <div class="form-group">
-                                    <label for="factor-value">Initial Value:</label>
-                                    <input type="text" id="factor-value" name="factor-value" placeholder="e.g., 10000.0" required>
-                                </div>
-                                
-                                <!-- Continuous specific fields -->
-                                <div id="continuous-fields" class="factor-fields">
-                                    <div class="form-group">
-                                        <label for="loc">Location (Mean):</label>
-                                        <input type="number" id="loc" name="loc" placeholder="e.g., 10000.0">
-                                    </div>
-                                    <div class="form-group">
-                                        <label for="scale">Scale (Std Dev):</label>
-                                        <input type="number" id="scale" name="scale" placeholder="e.g., 1000.0">
-                                    </div>
-                                    <div class="form-group">
-                                        <label for="lower-bound">Lower Bound:</label>
-                                        <input type="number" id="lower-bound" name="lower-bound" placeholder="Optional">
-                                    </div>
-                                    <div class="form-group">
-                                        <label for="upper-bound">Upper Bound:</label>
-                                        <input type="number" id="upper-bound" name="upper-bound" placeholder="Optional">
-                                    </div>
-                                </div>
-                                
-                                <!-- Categorical specific fields -->
-                                <div id="categorical-fields" class="factor-fields" style="display: none;">
-                                    <div class="form-group">
-                                        <label for="categories">Categories (comma-separated):</label>
-                                        <input type="text" id="categories" name="categories" placeholder="e.g., low,medium,high">
-                                    </div>
-                                    <div class="form-group">
-                                        <label for="probabilities">Probabilities (comma-separated):</label>
-                                        <input type="text" id="probabilities" name="probabilities" placeholder="e.g., 0.2,0.5,0.3">
-                                    </div>
-                                </div>
-                                
-                                <!-- Discrete specific fields -->
-                                <div id="discrete-fields" class="factor-fields" style="display: none;">
-                                    <div class="form-group">
-                                        <label for="rate">Rate (for Poisson):</label>
-                                        <input type="number" id="rate" name="rate" placeholder="e.g., 5.0">
-                                    </div>
-                                </div>
-                                
-                                <div class="form-group">
-                                    <label for="depends-on">Depends On (comma-separated):</label>
-                                    <input type="text" id="depends-on" name="depends-on" placeholder="e.g., market_size,competition_level">
-                                </div>
-                                
-                                <div class="form-actions">
-                                    <button type="submit" class="primary-btn">Add State Factor</button>
-                                </div>
-                            </form>
-                            
-                            <div class="current-config">
-                                <h3>Current State Factors</h3>
-                                <div id="current-factors" class="config-list">
-                                    <div class="no-items">No state factors defined yet.</div>
-                                </div>
+                            <div class="factor-graph-help">
+                                <strong>Click "Add Factor"</strong> to instantly create new nodes. <strong>Drag and drop</strong> to connect and arrange them.
+                                All changes stay local until you click <strong>Save All Factors to Server</strong>. Hierarchical relationships are automatically 
+                                inferred from node connections.
                             </div>
+                            
+                            <div id="factor-graph-container" class="factor-graph-container"></div>
+                            
+                            <!-- The editor panel will be inserted here by JavaScript -->
+                            
+                            <!-- Hidden div for compatibility with chat.js -->
+                            <div id="current-factors" style="display: none;"></div>
                         </div>
                         
                         <!-- Action Space Tab -->
@@ -352,7 +287,7 @@
                         Hello! I'm ZeroAIcon. How can I help you today?
                     </div>
                 </div>
-                <div id="typing-indicator" class="typing-indicator">
+                <div id="typing-indicator" class="typing-indicator" style="display: none;">
                     <div class="typing-status">
                         <span class="dots"><span>.</span><span>.</span><span>.</span></span> Thinking...
                     </div>
@@ -368,5 +303,9 @@
     </div>
     
     <script src="{{ url_for('static', filename='js/chat.js') }}"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/factor_graph.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/notifications.css') }}">
+    <script src="{{ url_for('static', filename='js/modules/factor_graph.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/factor_editor.js') }}"></script>
 </body>
 </html> 

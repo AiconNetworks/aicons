@@ -239,16 +239,44 @@ def get_configuration():
                     'reliability': getattr(sensor, 'reliability', None)
                 })
         
-        # Get state factors
+        # Get state factors with ALL properties
         state_factors = []
         if hasattr(aicon.brain, 'state') and hasattr(aicon.brain.state, 'get_state_factors'):
             factors = aicon.brain.state.get_state_factors()
             for name, factor in factors.items():
-                state_factors.append({
+                # Get factor type
+                factor_type = factor.__class__.__name__.replace('LatentVariable', '').lower()
+                
+                # Create the basic factor data with complete information
+                factor_data = {
                     'name': name,
-                    'factor_type': factor.__class__.__name__.replace('LatentVariable', '').lower(),
-                    'value': str(factor.value) if hasattr(factor, 'value') else str(factor.get('value', 'N/A'))
-                })
+                    'factor_type': factor_type,
+                    'value': factor.value if hasattr(factor, 'value') else factor.get('value', 0),
+                    'params': {},
+                    'relationships': {'depends_on': []}
+                }
+                
+                # Add type-specific parameters - ensure all required params are included
+                if factor_type == 'continuous':
+                    factor_data['params']['loc'] = factor.loc if hasattr(factor, 'loc') else 0
+                    factor_data['params']['scale'] = factor.scale if hasattr(factor, 'scale') else 1
+                    
+                    # Add constraints if they exist
+                    if hasattr(factor, 'constraints') and factor.constraints:
+                        factor_data['params']['constraints'] = factor.constraints
+                
+                elif factor_type == 'categorical':
+                    factor_data['params']['categories'] = factor.categories if hasattr(factor, 'categories') else []
+                    factor_data['params']['probs'] = factor.probs if hasattr(factor, 'probs') else []
+                
+                elif factor_type == 'discrete':
+                    factor_data['params']['rate'] = factor.rate if hasattr(factor, 'rate') else 5
+                
+                # Get relationships
+                if hasattr(factor, 'parents') and factor.parents:
+                    factor_data['relationships']['depends_on'] = [parent.name for parent in factor.parents]
+                
+                state_factors.append(factor_data)
         
         # Get action space
         action_space = None
@@ -390,6 +418,99 @@ def add_state_factor():
     
     except Exception as e:
         logger.error(f"Error adding state factor: {str(e)}", exc_info=True)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/delete-state-factor', methods=['POST'])
+def delete_state_factor():
+    """Delete a state factor from ZeroAIcon."""
+    try:
+        data = request.json
+        name = data.get('name')
+        
+        if not name:
+            return jsonify({
+                'success': False, 
+                'error': 'Factor name is required'
+            }), 400
+        
+        logger.info(f"Deleting state factor: {name}")
+        
+        # Check if the factor exists
+        if not hasattr(aicon.brain, 'state') or not hasattr(aicon.brain.state, 'get_state_factors'):
+            return jsonify({
+                'success': False, 
+                'error': 'State representation system not initialized'
+            }), 500
+            
+        factors = aicon.brain.state.get_state_factors()
+        if name not in factors:
+            return jsonify({
+                'success': False, 
+                'error': f'State factor "{name}" does not exist'
+            }), 404
+        
+        # Delete the factor
+        try:
+            # The current ZeroAIcon API doesn't have a direct delete method,
+            # so we need to recreate all factors except the one to delete
+            current_factors = []
+            for factor_name, factor in factors.items():
+                if factor_name != name:
+                    factor_type = factor.__class__.__name__.replace('LatentVariable', '').lower()
+                    
+                    # Extract factor details for reconstruction
+                    factor_data = {
+                        'name': factor_name,
+                        'factor_type': factor_type,
+                        'value': factor.value if hasattr(factor, 'value') else factor.get('value', 0),
+                        'params': {},
+                        'relationships': {'depends_on': []}
+                    }
+                    
+                    # If categorical, get categories and probs
+                    if factor_type == 'categorical' and hasattr(factor, 'categories'):
+                        factor_data['params']['categories'] = factor.categories
+                        factor_data['params']['probs'] = factor.probs
+                    
+                    # If continuous, get loc and scale
+                    elif factor_type == 'continuous' and hasattr(factor, 'loc') and hasattr(factor, 'scale'):
+                        factor_data['params']['loc'] = factor.loc
+                        factor_data['params']['scale'] = factor.scale
+                        
+                        # Check for constraints
+                        if hasattr(factor, 'constraints'):
+                            factor_data['params']['constraints'] = factor.constraints
+                    
+                    # If discrete, get rate
+                    elif factor_type == 'discrete' and hasattr(factor, 'rate'):
+                        factor_data['params']['rate'] = factor.rate
+                    
+                    current_factors.append(factor_data)
+            
+            # Reset the state factors
+            aicon.brain.state.reset()
+            
+            # Recreate all factors except the deleted one
+            for factor_data in current_factors:
+                aicon.add_state_factor(
+                    name=factor_data['name'],
+                    factor_type=factor_data['factor_type'],
+                    value=factor_data['value'],
+                    params=factor_data['params'],
+                    relationships=factor_data['relationships']
+                )
+            
+            return jsonify({'success': True})
+            
+        except Exception as e:
+            logger.error(f"Error deleting state factor: {str(e)}", exc_info=True)
+            return jsonify({
+                'success': False, 
+                'error': f"Failed to delete state factor: {str(e)}"
+            }), 500
+    
+    except Exception as e:
+        logger.error(f"Error in delete state factor endpoint: {str(e)}", exc_info=True)
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/define-action-space', methods=['POST'])

@@ -270,25 +270,30 @@
    * Handles clicks on thinking headers to expand/collapse
    */
   function handleThinkingToggleClick(event) {
-    const target = event.target;
+    // Find if we clicked on a thinking header or its child elements
+    const header = event.target.closest('.thinking-header');
+    if (!header) return;
     
-    // Check if it's a thinking header or child of thinking header
-    if (target.classList.contains("thinking-header") || 
-        findParentWithClass(target, "thinking-header")) {
-      
-      const header = target.classList.contains("thinking-header") ? 
-                    target : findParentWithClass(target, "thinking-header");
-      
-      const content = header.nextElementSibling;
-      const indicator = header.querySelector(".toggle-indicator");
-      
-      if (content.classList.contains("collapsed")) {
-        content.classList.remove("collapsed");
-        indicator.textContent = "[-]";
-      } else {
-        content.classList.add("collapsed");
-        indicator.textContent = "[+]";
-      }
+    // Find the associated content - it should be the next sibling
+    const wrapper = header.closest('.thinking-content-wrapper');
+    if (!wrapper) return;
+    
+    const content = wrapper.querySelector('.thinking-content');
+    if (!content) return;
+    
+    // Find the indicator
+    const indicator = header.querySelector('.toggle-indicator');
+    if (!indicator) return;
+    
+    // Toggle collapsed state
+    if (content.classList.contains('collapsed')) {
+      // Expand
+      content.classList.remove('collapsed');
+      indicator.textContent = '[-]';
+    } else {
+      // Collapse
+      content.classList.add('collapsed');
+      indicator.textContent = '[+]';
     }
   }
 
@@ -401,18 +406,26 @@
       // Create placeholder for thinking
       const thinkingDiv = document.createElement("div");
       thinkingDiv.className = "message thinking-message";
-      const thinkingContentDiv = document.createElement("div");
-      thinkingContentDiv.className = "message-content thinking-content-wrapper";
-      thinkingContentDiv.innerHTML = `
-        <div class="thinking-header">
-          <strong>Thinking Process</strong>
-          <span class="toggle-indicator">[-]</span>
-        </div>
-        <div class="thinking-content">
-          <div class="typing-status">Processing...</div>
-        </div>
+      const thinkingContentWrapper = document.createElement("div");
+      thinkingContentWrapper.className = "message-content thinking-content-wrapper";
+      
+      // Create the thinking header
+      const thinkingHeader = document.createElement("div");
+      thinkingHeader.className = "thinking-header";
+      thinkingHeader.innerHTML = `
+        <strong>Thinking Process</strong>
+        <span class="toggle-indicator">[-]</span>
       `;
-      thinkingDiv.appendChild(thinkingContentDiv);
+      
+      // Create the thinking content area
+      const thinkingContent = document.createElement("div");
+      thinkingContent.className = "thinking-content";
+      thinkingContent.innerHTML = `<div class="typing-status">Processing...</div>`;
+      
+      // Assemble the thinking section
+      thinkingContentWrapper.appendChild(thinkingHeader);
+      thinkingContentWrapper.appendChild(thinkingContent);
+      thinkingDiv.appendChild(thinkingContentWrapper);
       
       // Create placeholder for response
       const responseDiv = document.createElement("div");
@@ -427,7 +440,7 @@
       messagesContainer.insertBefore(responseDiv, typingIndicator);
       
       // Get references to thinking content for updating
-      const thinkingContent = thinkingContentDiv.querySelector(".thinking-content");
+      const thinkingContentEl = thinkingContent;
       
       // Keep track of accumulated thinking and response
       let accumulatedThinking = "";
@@ -479,7 +492,7 @@
                     // Extract thinking content
                     const thinkContent = chunkText.split("<think>")[1];
                     accumulatedThinking += thinkContent;
-                    thinkingContent.textContent = accumulatedThinking; // Keep thinking as plain text
+                    thinkingContentEl.textContent = accumulatedThinking; // Keep thinking as plain text
                   } 
                   else if (hasDetectedThinkTag && chunkText.includes("</think>")) {
                     // End of thinking section
@@ -491,7 +504,7 @@
                     // Add the first part to thinking
                     if (parts[0]) {
                       accumulatedThinking += parts[0];
-                      thinkingContent.textContent = accumulatedThinking; // Keep thinking as plain text
+                      thinkingContentEl.textContent = accumulatedThinking; // Keep thinking as plain text
                     }
                     
                     // Add the second part to response
@@ -503,7 +516,7 @@
                   else if (inThinkingSection) {
                     // In thinking section, add to thinking
                     accumulatedThinking += chunkText;
-                    thinkingContent.textContent = accumulatedThinking; // Keep thinking as plain text
+                    thinkingContentEl.textContent = accumulatedThinking; // Keep thinking as plain text
                   }
                   else {
                     // Normal response content
@@ -516,7 +529,7 @@
                 if (data.done) {
                   // Finalize the thinking and response
                   if (accumulatedThinking.trim()) {
-                    thinkingContent.textContent = accumulatedThinking; // Keep thinking as plain text
+                    thinkingContentEl.textContent = accumulatedThinking; // Keep thinking as plain text
                   } else {
                     // No thinking content, remove the thinking bubble
                     thinkingDiv.remove();
@@ -530,7 +543,7 @@
                         // parts[0] is before <think>, parts[1] is inside <think>, parts[2] is after </think>
                         const finalResponse = (parts[0] + " " + (parts[2] || "")).trim();
                         responseContentDiv.innerHTML = renderMarkdown(finalResponse);
-                        thinkingContent.textContent = parts[1].trim(); // Keep thinking as plain text
+                        thinkingContentEl.textContent = parts[1].trim(); // Keep thinking as plain text
                       } else {
                         responseContentDiv.innerHTML = renderMarkdown(data.full_response);
                       }
@@ -542,6 +555,7 @@
                     responseDiv.remove();
                   }
                   
+                  typingIndicator.style.display = "none"; // Ensure indicator is hidden
                   scrollToBottom();
                   isProcessing = false;
                   // Add a small delay before loading token usage to ensure server has updated
@@ -688,10 +702,10 @@
   }
   
   /**
-   * Switches active tab in configuration panel
+   * Switches to the specified tab
    */
   function switchTab(tabName) {
-    // Update tab buttons
+    // Update button states
     tabBtns.forEach(btn => {
       if (btn.getAttribute("data-tab") === tabName) {
         btn.classList.add("active");
@@ -700,12 +714,73 @@
       }
     });
     
-    // Update tab panes
+    // Update tab pane visibility
     tabPanes.forEach(pane => {
       if (pane.id === tabName + "-tab") {
-        pane.classList.add("active");
+        pane.style.display = "block";
+        
+        // If this is the factors tab, initialize the graph immediately
+        if (tabName === "factors") {
+          console.log("Factors tab activated - forcing initialization");
+          
+          // Force graph container to be visible with size
+          const graphContainer = document.getElementById('factor-graph-container');
+          if (graphContainer) {
+            graphContainer.style.display = 'block';
+            graphContainer.style.height = '400px';
+          }
+          
+          // Force immediate initialization
+          if (window.FactorGraph) {
+            // Create instance directly if needed
+            try {
+              // If this is a new instance
+              if (!window.factorGraphInstance) {
+                console.log("Creating new factor graph instance directly");
+                window.factorGraphInstance = new window.FactorGraph('factor-graph-container');
+                
+                // Add factor button directly to ensure it's visible
+                const addButton = document.createElement('button');
+                addButton.textContent = 'Add Factor';
+                addButton.style.position = 'absolute';
+                addButton.style.top = '10px';
+                addButton.style.right = '10px';
+                addButton.style.zIndex = '1000';
+                addButton.style.padding = '8px 16px';
+                addButton.style.backgroundColor = '#3b82f6';
+                addButton.style.color = '#ffffff';
+                addButton.style.border = 'none';
+                addButton.style.borderRadius = '4px';
+                addButton.style.fontWeight = 'bold';
+                addButton.style.cursor = 'pointer';
+                
+                addButton.addEventListener('click', function() {
+                  if (window.factorGraphInstance) {
+                    window.factorGraphInstance.quickAddFactor();
+                  }
+                });
+                
+                if (graphContainer) {
+                  graphContainer.appendChild(addButton);
+                }
+              }
+              
+              // Trigger a resize to make it visible
+              if (window.factorGraphInstance) {
+                window.factorGraphInstance.resize();
+              }
+            } catch (e) {
+              console.error("Error creating factor graph:", e);
+            }
+          }
+          
+          // Also call the external init function if available
+          if (typeof window.initFactorEditor === 'function') {
+            window.initFactorEditor();
+          }
+        }
       } else {
-        pane.classList.remove("active");
+        pane.style.display = "none";
       }
     });
   }
