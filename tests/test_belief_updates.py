@@ -10,40 +10,30 @@ sys.path.append(str(project_root))
 from aicons.definitions.zero import ZeroAIcon
 from aicons.bayesbrainGPT.sensors import Sensor
 
-def print_beliefs(aicon, label):
-    """Helper function to print current beliefs"""
-    beliefs = aicon.get_state()
-    print(f"\n=== {label} ===")
-    for factor_name, value in beliefs.items():
-        factor = aicon.brain.state.factors[factor_name]
-        print(f"{factor_name}: {value:.4f} ± {factor._uncertainty:.4f}")
-        
-    # Print brain's uncertainty
-    print(f"\nBrain Uncertainty: {aicon.brain.uncertainty:.1%}")
-        
-    # Print detailed state representation
-    print("\n=== Detailed State Representation ===")
-    state_factors = aicon.brain.state.get_state_factors()
-    for name, factor in state_factors.items():
-        print(f"\n{name}:")
-        print(f"  Type: {factor['type']}")
-        print(f"  Value: {factor['value']}")
-        print(f"  Distribution: {factor['distribution']}")
-        print(f"  Parameters: {factor['params']}")
-        print(f"  Relationships: {factor['relationships']}")
-        print(f"  Uncertainty: {factor['uncertainty']}")
+def print_beliefs(aicon):
+    """Print current beliefs."""
+    state = aicon.brain.state.get_beliefs()
+    for key, value in state.items():
+        print(f"{key}: {value:.4f}")
 
 def main():
     # Create AIcon
     aicon = ZeroAIcon(name="my_aicon", description="My AIcon", model_name="deepseek-r1:7b")
     
+    print("\n=== Initial State (Before Adding Factors) ===")
+    print("Brain Uncertainty:", f"{aicon.brain.uncertainty:.1%}")
+    print("State Factors:", aicon.brain.state.factors)
+    
     # Add state factors
+    print("\n=== Adding State Factors ===")
     aicon.add_state_factor(
         name="market_size",
         factor_type="continuous",
         value=10000.0,
         params={"loc": 10000.0, "scale": 1000.0}
     )
+    print("\nAdded market_size factor")
+    print_beliefs(aicon)
     
     aicon.add_state_factor(
         name="conversion_rate",
@@ -51,6 +41,8 @@ def main():
         value=0.02,
         params={"loc": 0.02, "scale": 0.005}
     )
+    print("\nAdded conversion_rate factor")
+    print_beliefs(aicon)
     
     # Create a test sensor
     class TestSensor(Sensor):
@@ -75,26 +67,15 @@ def main():
     test_sensor = TestSensor(name="test_sensor")
     aicon.brain.perception.register_sensor("test_sensor", test_sensor)
     
-    # Print initial beliefs
-    print_beliefs(aicon, "Initial Beliefs")
+    print("\n=== Starting Perception Update ===")
+    print("Current brain uncertainty:", f"{aicon.brain.uncertainty:.1%}")
     
     # Update beliefs through sensor
     print("\nUpdating beliefs from sensor...")
-    
-    # Get current posterior samples
-    current_samples = aicon.brain.state.get_posterior_samples()
-    if current_samples:
-        print("\n=== Current Posterior Samples ===")
-        for factor, samples in current_samples.items():
-            print(f"{factor}:")
-            print(f"  Mean: {np.mean(samples):.4f}")
-            print(f"  Std: {np.std(samples):.4f}")
-    
-    # Update from sensor
     aicon.update_from_sensor("test_sensor")
     
-    # Print updated beliefs
-    print_beliefs(aicon, "Updated Beliefs")
+    # Print final beliefs after perception
+    print_beliefs(aicon)
     
     # Print update history
     print("\n=== Update History ===")

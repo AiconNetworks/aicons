@@ -514,51 +514,12 @@ class ZeroAIcon:
             return f"Error: {str(e)}"
     
     def get_state_representation_text(self) -> str:
-        """Get the actual text content of the state representation."""
-        if not self.brain:
-            return "No brain defined"
-        
-        # Get current state and posterior samples
+        """Get a text representation of the current state beliefs."""
         state = self.brain.state.get_beliefs()
-        posteriors = self.brain.state.get_posterior_samples()
-        
-        # Create output format
-        output = []
-        
-        # Add state factors
-        if state:
-            output.append("=== State Factors ===")
-            for name, value in state.items():
-                # Get the corresponding posterior samples if available
-                if name in posteriors:
-                    samples = posteriors[name]
-                    if isinstance(samples, np.ndarray) and len(samples) > 0:
-                        mean = np.mean(samples)
-                        std = np.std(samples)
-                        output.append(f"{name:20s}:")
-                        output.append(f"  Current: {value:10.2f}")
-                        output.append(f"  Mean:    {mean:10.2f}")
-                        output.append(f"  Std:     {std:10.2f}")
-                    else:
-                        output.append(f"{name:20s}: {value:10.2f}")
-                else:
-                    output.append(f"{name:20s}: {value:10.2f}")
-        
-        # Add belief history if available
-        if hasattr(self.brain, 'update_history') and self.brain.update_history:
-            if output:  # Add a newline if we already have content
-                output.append("")
-            output.append("=== Belief Update History ===")
-            for update in self.brain.update_history:
-                output.append(f"\nUpdate at {update.get('timestamp', 'unknown time')}:")
-                for name, value in update.get('values', {}).items():
-                    output.append(f"  {name}: {value}")
-        
-        # If we have no content at all, return a message indicating empty state
-        if not output:
-            return "No state factors defined"
-            
-        return "\n".join(output)
+        lines = []
+        for key, value in state.items():
+            lines.append(f"{key}: {value:.4f}")
+        return "\n".join(lines)
 
     def get_utility_function_text(self) -> str:
         """Get the actual text content of the utility function."""
@@ -583,9 +544,6 @@ class ZeroAIcon:
 
     def get_token_usage_report(self) -> Dict[str, Any]:
         """Get a report of token usage across components with actual content."""
-        # Get the raw content first
-        state_repr = self.get_state_representation()
-        
         # Convert numpy arrays to lists for JSON serialization
         def convert_numpy(obj):
             if isinstance(obj, np.ndarray):
@@ -596,11 +554,11 @@ class ZeroAIcon:
                 return [convert_numpy(item) for item in obj]
             return obj
             
-        state_repr = convert_numpy(state_repr)
-        state_repr_str = json.dumps(state_repr)
-        
-        action_space_str = str(self.brain.action_space) if self.brain.action_space else ""
-        utility_str = str(self.brain.utility_function) if self.brain.utility_function else ""
+        # Get the actual content strings
+        state_repr_text = self.get_state_representation_text()
+        action_space_str = self.get_action_space_text()
+        utility_str = self.get_utility_function_text()
+        inference_str = self.get_inference_text()
         
         # Count tokens and compare with estimation
         def count_and_compare(text: str, component: str) -> int:
@@ -609,28 +567,29 @@ class ZeroAIcon:
             print(f"{component}: {tokens} tokens (est: {estimated})")
             return tokens
         
-        # Count tokens for each component
-        state_repr_tokens = count_and_compare(state_repr_str, "State Representation")
+        # Count tokens for each component using actual content
+        state_repr_tokens = count_and_compare(state_repr_text, "State Representation")
         action_space_tokens = count_and_compare(action_space_str, "Action Space")
         utility_tokens = count_and_compare(utility_str, "Utility Function")
+        inference_tokens = count_and_compare(inference_str, "Inference")
         
         return {
             "state_representation": {
                 "tokens": state_repr_tokens,
-                "content": self.get_state_representation_text()
+                "content": state_repr_text
             },
             "utility_function": {
                 "tokens": utility_tokens,
-                "content": self.get_utility_function_text()
+                "content": utility_str
             },
             "action_space": {
                 "tokens": action_space_tokens,
-                "content": self.get_action_space_text()
+                "content": action_space_str
             },
             "inference": {
-                "tokens": self.token_usage["inference"],
-                "content": self.get_inference_text()
+                "tokens": inference_tokens,
+                "content": inference_str
             },
-            "total_used": state_repr_tokens + action_space_tokens + utility_tokens + self.token_usage["inference"],
-            "remaining": self.llm.context_window - (state_repr_tokens + action_space_tokens + utility_tokens + self.token_usage["inference"])
+            "total_used": state_repr_tokens + action_space_tokens + utility_tokens + inference_tokens,
+            "remaining": self.llm.context_window - (state_repr_tokens + action_space_tokens + utility_tokens + inference_tokens)
         } 
