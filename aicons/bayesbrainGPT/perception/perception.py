@@ -2,6 +2,7 @@ import tensorflow as tf
 import tensorflow_probability as tfp
 import numpy as np
 from typing import Dict, List, Optional, Any
+import time
 
 # TFP shortcuts
 tfd = tfp.distributions
@@ -85,32 +86,54 @@ class BayesianPerception:
             environment: Optional environment data to pass to sensors
             
         Returns:
-            Dictionary of observations from all sensors
+            Dictionary mapping factor names to (value, reliability) tuples
         """
-        observations = {}
+        print("\n=== Collecting Sensor Data ===")
+        all_sensor_data = {}
         
-        for name, sensor in self.sensors.items():
-            # Check if this is a Sensor object or a function
-            if isinstance(sensor, Sensor):
-                # Use Sensor's get_data method
-                data = sensor.get_data(environment)
-            else:
-                # Backward compatibility for sensor functions
-                data = sensor(environment) if environment else sensor()
+        for sensor_name, sensor in self.sensors.items():
+            print(f"\nCollecting data from sensor: {sensor_name}")
             
-            # Add to observations with factor name mapping
-            for sensor_factor_name, observation in data.items():
-                # Map the sensor factor name to state factor name
-                state_factor_name = self._map_factor_name(sensor_factor_name)
-                
-                if isinstance(observation, tuple) and len(observation) == 2:
-                    # If observation includes value and reliability
-                    observations[state_factor_name] = observation
+            try:
+                # Get data from sensor
+                if isinstance(sensor, Sensor):
+                    print("Using Sensor object's get_data method")
+                    sensor_data = sensor.get_data(environment)
                 else:
-                    # If only value is provided, assume reliability = 1.0
-                    observations[state_factor_name] = (observation, 1.0)
+                    print("Using legacy sensor function")
+                    data = sensor(environment) if environment else sensor()
+                    
+                    # Process data to ensure (value, reliability) tuples
+                    sensor_data = {}
+                    for factor_name, observation in data.items():
+                        if isinstance(observation, tuple) and len(observation) == 2:
+                            sensor_data[factor_name] = observation
+                        else:
+                            sensor_data[factor_name] = (observation, 1.0)
                 
-        return observations
+                print("Raw sensor data:")
+                for factor_name, (value, reliability) in sensor_data.items():
+                    print(f"  {factor_name}: value={value:.4f}, reliability={reliability:.2f}")
+                
+                # Map factor names to state factor names
+                print("Mapping to state factors:")
+                for sensor_factor_name, observation in sensor_data.items():
+                    state_factor_name = self._map_factor_name(sensor_factor_name)
+                    all_sensor_data[state_factor_name] = observation
+                    print(f"  {sensor_factor_name} → {state_factor_name}: value={observation[0]:.4f}, reliability={observation[1]:.2f}")
+                    
+            except Exception as e:
+                print(f"ERROR collecting data from sensor {sensor_name}: {str(e)}")
+                continue
+        
+        if not all_sensor_data:
+            print("WARNING: No sensor data collected")
+        else:
+            print("\nCollected data for factors:")
+            for factor_name, (value, reliability) in all_sensor_data.items():
+                print(f"  {factor_name}: value={value:.4f}, reliability={reliability:.2f}")
+        
+        return all_sensor_data
     
     def create_joint_prior(self):
         """
@@ -196,7 +219,7 @@ class BayesianPerception:
             Dictionary of posterior samples for each factor
         """
         if not observations:
-            print("\nNo posterior information available, using prior distributions")
+            print("\nNo observations available, using prior distributions")
             joint_dist = self.create_joint_prior()
             samples = joint_dist.sample(1000)
             
@@ -211,327 +234,124 @@ class BayesianPerception:
             
             return self.posterior_samples
         
-        # If observations are provided, use hierarchical sampling
+        # If observations are provided, use HMC for posterior sampling
+        print("\nComputing posterior with observations using HMC")
         return self._sample_posterior_hierarchical(observations)
     
     def _sample_posterior_hierarchical(self, observations):
         """
-        Sample from the posterior using the hierarchical joint distribution.
+        Sample from the posterior distribution using hierarchical sampling.
         
         Args:
             observations: Dictionary mapping factor names to (value, reliability) tuples
             
         Returns:
-            Dictionary of posterior samples for each factor
+            Dictionary mapping factor names to posterior samples
         """
-        state_factors = self.brain.state.get_state_factors()
-        
-        # Get joint prior distribution using the correct method
-        joint_dist = self.create_joint_prior()
+        # Convert observations to tensors
+        observed_data = {}
+        for name, (value, reliability) in observations.items():
+            observed_data[name] = tf.convert_to_tensor(value, dtype=tf.float32)
         
         # Set up observed data with reliability
-        tf_observations = {}
-        reliabilities = {}
-        
-        for name, (obs_value, reliability) in observations.items():
-            # Convert observation values to appropriate tensor types
-            if isinstance(obs_value, (int, np.int32, np.int64)):
-                tf_observations[name] = tf.constant(obs_value, dtype=tf.int32)
-            elif isinstance(obs_value, (float, np.float32, np.float64)):
-                tf_observations[name] = tf.constant(obs_value, dtype=tf.float32)
-            else:
-                tf_observations[name] = obs_value
-            reliabilities[name] = reliability
-        
-        # Define unnormalized posterior log probability function
         def target_log_prob_fn(*args):
-            # Convert positional arguments to dictionary
-            sample_dict = {name: value for name, value in zip(state_factors.keys(), args)}
+            # Combine prior and likelihood
+            log_prob = 0.0
             
-            # Prior log probability
-            try:
-                # Convert sample_dict to list in the correct order
-                sample_list = []
-                for name in state_factors.keys():
-                    value = sample_dict[name]
-                    sample_list.append(value)
-                
-                prior_log_prob = joint_dist.log_prob(sample_list)
-            except Exception as e:
-                # Return a very low probability with proper gradient information
-                return tf.reduce_sum(tf.constant(-1e10, dtype=tf.float32) * tf.ones_like(args[0]))
+            # Add prior terms
+            for i, (name, factor) in enumerate(self.brain.state.get_state_factors().items()):
+                if factor["type"] == "continuous":
+                    # Normal distribution
+                    dist = tfd.Normal(
+                        loc=factor["params"]["loc"],
+                        scale=factor["params"]["scale"]
+                    )
+                    log_prob += dist.log_prob(args[i])
             
-            # Likelihood (observation model)
-            likelihood_log_prob = tf.constant(0.0, dtype=tf.float32)
+            # Add likelihood terms
+            for i, (name, (value, reliability)) in enumerate(observations.items()):
+                if name in self.brain.state.get_state_factors():
+                    factor = self.brain.state.get_state_factors()[name]
+                    if factor["type"] == "continuous":
+                        # Normal distribution with reliability-weighted variance
+                        dist = tfd.Normal(
+                            loc=value,
+                            scale=factor["params"]["scale"] / reliability
+                        )
+                        log_prob += dist.log_prob(args[i])
             
-            for name, obs_value in tf_observations.items():
-                if name not in sample_dict:
-                    continue
-                    
-                # Get the sampled value for this factor
-                sampled_value = sample_dict[name]
-                reliability = reliabilities[name]
-                
-                # Get the factor
-                factor = state_factors[name]
-                factor_type = factor.get("type", "continuous")
-                params = factor.get("params", {})
-                
-                if factor_type == "continuous":
-                    # For continuous, use normal likelihood with reliability as precision
-                    variance = (1.0 / reliability) ** 2
-                    # Convert observation to float32 to match scale dtype
-                    obs_value_float = tf.cast(obs_value, tf.float32)
-                    likelihood = tfd.Normal(loc=obs_value_float, scale=tf.sqrt(variance))
-                    factor_ll = likelihood.log_prob(sampled_value)
-                    likelihood_log_prob += factor_ll
-                    
-                elif factor_type == "categorical":
-                    # For categorical, use Gumbel-Softmax trick
-                    categories = params.get("categories", [])
-                    
-                    if not categories:
-                        continue
-                        
-                    # Convert observation to one-hot encoding
-                    if isinstance(obs_value, str):
-                        if obs_value in categories:
-                            obs_idx = categories.index(obs_value)
-                            obs_one_hot = tf.one_hot(obs_idx, len(categories))
-                        else:
-                            continue
-                    else:
-                        continue
-                        
-                    # Use Gumbel-Softmax distribution for categorical variables
-                    temperature = 0.1  # Controls the "softness" of the approximation
-                    gumbel_dist = tfd.Gumbel(loc=0., scale=1.)
-                    logits = sampled_value  # sampled_value is now the logits
-                    
-                    # Compute Gumbel-Softmax probabilities
-                    gumbel_noise = gumbel_dist.sample([len(categories)])
-                    softmax_probs = tf.nn.softmax((logits + gumbel_noise) / temperature)
-                    
-                    # Compute log probability using cross-entropy
-                    log_prob = tf.reduce_sum(obs_one_hot * tf.math.log(softmax_probs + 1e-10))
-                    likelihood_log_prob += log_prob * reliability
-                    
-                elif factor_type == "discrete":
-                    if "categories" in params:
-                        # For categorical-like discrete, use same Gumbel-Softmax approach
-                        categories = params["categories"]
-                        
-                        if not categories:
-                            continue
-                            
-                        # Convert observation to one-hot encoding
-                        if isinstance(obs_value, str):
-                            if obs_value in categories:
-                                obs_idx = categories.index(obs_value)
-                                obs_one_hot = tf.one_hot(obs_idx, len(categories))
-                            else:
-                                continue
-                        else:
-                            continue
-                            
-                        # Use Gumbel-Softmax distribution
-                        temperature = 0.1
-                        gumbel_dist = tfd.Gumbel(loc=0., scale=1.)
-                        logits = sampled_value
-                        
-                        # Compute Gumbel-Softmax probabilities
-                        gumbel_noise = gumbel_dist.sample([len(categories)])
-                        softmax_probs = tf.nn.softmax((logits + gumbel_noise) / temperature)
-                        
-                        # Compute log probability using cross-entropy
-                        log_prob = tf.reduce_sum(obs_one_hot * tf.math.log(softmax_probs + 1e-10))
-                        likelihood_log_prob += log_prob * reliability
-                    else:
-                        # For Poisson distribution
-                        rate = float(obs_value)
-                        likelihood = tfd.Poisson(rate=rate)
-                        factor_ll = likelihood.log_prob(sampled_value) * reliability
-                        likelihood_log_prob += factor_ll
-            
-            total_log_prob = prior_log_prob + likelihood_log_prob
-            return total_log_prob
+            return log_prob
         
-        # Get bijectors for constrained variables
-        bijectors = {}
-        for name, factor in state_factors.items():
-            factor_type = factor.get("type", "continuous")
-            params = factor.get("params", {})
-            constraints = params.get("constraints", {})
-            
-            if factor_type == "categorical" or (factor_type == "discrete" and "categories" in params):
-                # For categorical variables, use unconstrained space for logits
-                categories = params.get("categories", [])
-                if categories:
-                    bijectors[name] = tfb.Identity()  # No transformation needed for logits
-            elif factor_type == "continuous" and constraints:
-                # For continuous variables with constraints
-                lower = constraints.get("lower")
-                upper = constraints.get("upper")
-                
-                if lower is not None and upper is not None:
-                    bijectors[name] = tfb.Sigmoid(low=float(lower), high=float(upper))
-                elif lower is not None:
-                    bijectors[name] = tfb.Softplus() + tfb.Shift(shift=float(lower))
-                elif upper is not None:
-                    bijectors[name] = -tfb.Softplus() + tfb.Shift(shift=float(upper))
+        # Get HMC configuration from brain
+        hmc_config = self.brain.hmc_config
         
-        # Initialize Hamiltonian Monte Carlo (HMC) kernel
-        num_results = 1000
-        num_burnin_steps = 500
-        step_size = 0.01
-        num_leapfrog_steps = 10
+        # Create HMC kernel
+        hmc_kernel = tfp.mcmc.HamiltonianMonteCarlo(
+            target_log_prob_fn=target_log_prob_fn,
+            step_size=hmc_config['step_size'],
+            num_leapfrog_steps=hmc_config['num_leapfrog_steps']
+        )
+        
+        # Adaptive step size
+        adaptive_hmc = tfp.mcmc.SimpleStepSizeAdaptation(
+            inner_kernel=hmc_kernel,
+            num_adaptation_steps=int(hmc_config['num_burnin_steps'] * 0.8),
+            target_accept_prob=hmc_config['target_accept_prob']
+        )
+        
+        # Initial state
+        initial_state = []
+        for name, factor in self.brain.state.get_state_factors().items():
+            if factor["type"] == "continuous":
+                initial_state.append(tf.convert_to_tensor(factor["value"], dtype=tf.float32))
+        
+        # Run HMC
+        @tf.function
+        def run_chain():
+            return tfp.mcmc.sample_chain(
+                num_results=hmc_config['num_results'],
+                num_burnin_steps=hmc_config['num_burnin_steps'],
+                current_state=initial_state,
+                kernel=adaptive_hmc,
+                trace_fn=lambda _, pkr: pkr.inner_results.is_accepted
+            )
         
         try:
-            # Initial state based on prior samples
-            initial_sample = joint_dist.sample()
+            samples, is_accepted = run_chain()
+            acceptance_rate = tf.reduce_mean(tf.cast(is_accepted, dtype=tf.float32))
+            print(f"\nRunning HMC sampling...")
+            print(f"HMC Acceptance Rate: {acceptance_rate:.2%}")
             
-            # Handle both list and dictionary returns from joint_dist.sample()
-            if isinstance(initial_sample, list):
-                # If it's a list, convert to dictionary using state factor names
-                initial_sample = {name: value for name, value in zip(state_factors.keys(), initial_sample)}
+            # Process samples
+            self.posterior_samples = {}  # Initialize posterior_samples
+            for i, (name, factor) in enumerate(self.brain.state.get_state_factors().items()):
+                if factor["type"] == "continuous":
+                    samples_i = samples[i].numpy()
+                    self.posterior_samples[name] = samples_i
             
-            # Create bijector dict with proper structure
-            transformed_bijectors = bijectors if bijectors else {}
-            
-            # HMC transition kernel
-            hmc_kernel = tfp.mcmc.HamiltonianMonteCarlo(
-                target_log_prob_fn=target_log_prob_fn,
-                step_size=step_size,
-                num_leapfrog_steps=num_leapfrog_steps
-            )
-            
-            # Add adaptation for step size
-            adaptive_hmc_kernel = tfp.mcmc.SimpleStepSizeAdaptation(
-                inner_kernel=hmc_kernel,
-                num_adaptation_steps=int(num_burnin_steps * 0.8)
-            )
-            
-            # Add bijector transformation if needed
-            if transformed_bijectors:
-                # Create a list of bijectors in the same order as state factors
-                bijector_list = []
-                for name in state_factors.keys():
-                    if name in transformed_bijectors:
-                        bijector = transformed_bijectors[name]
-                    else:
-                        bijector = tfb.Identity()
-                    bijector_list.append(bijector)
-                
-                # Create a Blockwise bijector from the list
-                blockwise_bijector = tfb.Blockwise(bijector_list)
-                
-                kernel = tfp.mcmc.TransformedTransitionKernel(
-                    inner_kernel=adaptive_hmc_kernel,
-                    bijector=blockwise_bijector
-                )
-            else:
-                kernel = adaptive_hmc_kernel
-            
-            # Run the sampler
-            @tf.function(autograph=False)
-            def run_mcmc():
-                # Convert initial state to list of tensors for MCMC
-                initial_state = []
-                for name in state_factors.keys():
-                    if name in initial_sample:
-                        value = initial_sample[name]
-                        factor = state_factors[name]
-                        factor_type = factor.get("type", "continuous")
-                        params = factor.get("params", {})
-                        
-                        if factor_type == "categorical":
-                            # For categorical variables, convert to index
-                            categories = params.get("categories", [])
-                            if isinstance(value, str):
-                                initial_state.append(tf.constant(categories.index(value), dtype=tf.int32))
-                            elif isinstance(value, (int, np.integer)):
-                                initial_state.append(tf.constant(value, dtype=tf.int32))
-                            else:
-                                initial_state.append(tf.constant(0, dtype=tf.int32))
-                        elif factor_type == "discrete" and "categories" in params:
-                            # For categorical-like discrete variables
-                            categories = params["categories"]
-                            if isinstance(value, str):
-                                if value in categories:
-                                    initial_state.append(tf.constant(categories.index(value), dtype=tf.int32))
-                                else:
-                                    initial_state.append(tf.constant(0, dtype=tf.int32))
-                            elif isinstance(value, (int, np.integer)):
-                                initial_state.append(tf.constant(value, dtype=tf.int32))
-                            else:
-                                initial_state.append(tf.constant(0, dtype=tf.int32))
-                        else:
-                            # For continuous and other discrete variables
-                            if tf.is_tensor(value):
-                                initial_state.append(value)
-                            else:
-                                if isinstance(value, (int, np.int32, np.int64)):
-                                    initial_state.append(tf.constant(value, dtype=tf.int32))
-                                elif isinstance(value, (float, np.float32, np.float64)):
-                                    initial_state.append(tf.constant(value, dtype=tf.float32))
-                                else:
-                                    initial_state.append(tf.constant(value))
-                    else:
-                        # Default value if not in initial sample
-                        initial_state.append(tf.constant(0.0, dtype=tf.float32))
-                
-                return tfp.mcmc.sample_chain(
-                    num_results=num_results,
-                    num_burnin_steps=num_burnin_steps,
-                    current_state=initial_state,
-                    kernel=kernel,
-                    trace_fn=lambda _, pkr: pkr.inner_results.is_accepted if not transformed_bijectors else pkr.inner_results.inner_results.is_accepted
-                )
-            
-            samples, is_accepted = run_mcmc()
-            
-            # Process and store posterior samples
-            acceptance_rate = tf.reduce_mean(tf.cast(is_accepted, tf.float32))
-            print(f"\nHMC Acceptance Rate: {acceptance_rate:.2%}")
-            
-            # Print HMC diagnostics
-            print("\nHMC Diagnostics:")
-            print(f"Number of results: {num_results}")
-            print(f"Number of burnin steps: {num_burnin_steps}")
-            print(f"Step size: {step_size}")
-            print(f"Number of leapfrog steps: {num_leapfrog_steps}")
-            
-            # Convert samples to dictionary format
-            self.posterior_samples = {}
-            
-            # Convert samples to dictionary format
-            for i, name in enumerate(state_factors.keys()):
-                factor = state_factors.get(name, {})
-                factor_type = factor.get("type", "continuous")
-                params = factor.get("params", {})
-                
-                # Get samples for this factor
-                factor_samples = samples[i]
-                
-                # Convert samples to the right type
-                if factor_type == "categorical":
-                    # Convert indices to category values
-                    categories = params.get("categories", [])
-                    if categories:
-                        # Check if samples are indices or already category values
-                        if tf.is_tensor(factor_samples) and factor_samples.dtype in (tf.int32, tf.int64):
-                            self.posterior_samples[name] = np.array([categories[int(idx)] 
-                                                              for idx in factor_samples.numpy()])
-                        else:
-                            self.posterior_samples[name] = factor_samples.numpy()
-                else:
-                    self.posterior_samples[name] = factor_samples.numpy()
+            # If acceptance rate is low, increase uncertainty once for the entire run
+            if acceptance_rate < 0.5:
+                # Increase brain's uncertainty by 10% (0.1)
+                new_uncertainty = min(1.0, self.brain.uncertainty + 0.1)
+                # Let the brain track the uncertainty change
+                self.brain.update_uncertainty(new_uncertainty, "low_acceptance")
+                print(f"Low acceptance rate: Increased brain uncertainty to {new_uncertainty:.1%}")
             
             return self.posterior_samples
             
         except Exception as e:
-            self.posterior_samples = {}  # Initialize empty posterior samples
-            return {}
+            print(f"Error during HMC sampling: {str(e)}")
+            # Even if sampling fails, increase uncertainty for all continuous factors
+            for name, factor in self.brain.state.get_state_factors().items():
+                if factor["type"] == "continuous":
+                    factor_obj = self.brain.state.factors[name]
+                    new_uncertainty = factor_obj._uncertainty * 1.2
+                    factor_obj.update_uncertainty(new_uncertainty)
+                    print(f"Sampling failed: Increased uncertainty for {name} to {new_uncertainty:.4f}")
+            
+            # Set posterior_samples to None to indicate sampling failed
+            self.posterior_samples = None
+            return None
     
     def update_state_from_posterior(self):
         """
@@ -669,50 +489,91 @@ class BayesianPerception:
         Returns:
             True if update was successful
         """
+        print(f"\n=== BayesianPerception.update_from_sensor ===")
+        print(f"Sensor name: {sensor_name}")
+        
         if sensor_name not in self.sensors:
-            print(f"No sensor registered with name {sensor_name}")
+            print(f"ERROR: No sensor registered with name {sensor_name}")
             return False
         
         # Apply any one-time factor mappings for this update
         if factor_mapping:
+            print("\nApplying factor mappings:")
             for sensor_name, state_name in factor_mapping.items():
                 self.factor_name_mapping[sensor_name] = state_name
-                print(f"Applied temporary mapping: {sensor_name} → {state_name}")
-            
+                print(f"  {sensor_name} → {state_name}")
+        
         # Get sensor data
+        print("\nGetting sensor data...")
         sensor = self.sensors[sensor_name]
         
         # Check if this is a Sensor object or a function
         if isinstance(sensor, Sensor):
-            # Use Sensor's get_data method
-            sensor_data = sensor.get_data(environment)
+            print("Using Sensor object's get_data method")
+            try:
+                sensor_data = sensor.get_data(environment)
+                print(f"Raw sensor data returned: {sensor_data}")
+            except Exception as e:
+                print(f"ERROR: Failed to get data from sensor: {str(e)}")
+                return False
         else:
-            # Backward compatibility for sensor functions
-            data = sensor(environment) if environment else sensor()
-            
-            # Process data to ensure (value, reliability) tuples
-            sensor_data = {}
-            for factor_name, observation in data.items():
-                if isinstance(observation, tuple) and len(observation) == 2:
-                    sensor_data[factor_name] = observation
-                else:
-                    sensor_data[factor_name] = (observation, 1.0)
+            print("Using legacy sensor function")
+            try:
+                data = sensor(environment) if environment else sensor()
+                print(f"Raw function data returned: {data}")
+                
+                # Process data to ensure (value, reliability) tuples
+                sensor_data = {}
+                for factor_name, observation in data.items():
+                    if isinstance(observation, tuple) and len(observation) == 2:
+                        sensor_data[factor_name] = observation
+                    else:
+                        sensor_data[factor_name] = (observation, 1.0)
+            except Exception as e:
+                print(f"ERROR: Failed to get data from sensor function: {str(e)}")
+                return False
+        
+        if not sensor_data:
+            print("ERROR: No sensor data received")
+            return False
+        
+        print("\nProcessed sensor data:")
+        for factor_name, (value, reliability) in sensor_data.items():
+            print(f"  {factor_name}: value={value:.4f}, reliability={reliability:.2f}")
         
         # Map factor names and create observations dict
+        print("\nMapping sensor factors to state factors:")
         mapped_sensor_data = {}
         for sensor_factor_name, observation in sensor_data.items():
             # Map the sensor factor name to state factor name
             state_factor_name = self._map_factor_name(sensor_factor_name)
             mapped_sensor_data[state_factor_name] = observation
-            
-            print(f"Mapping observation: {sensor_factor_name} → {state_factor_name}")
-            
+            print(f"  {sensor_factor_name} → {state_factor_name}: value={observation[0]:.4f}, reliability={observation[1]:.2f}")
+        
+        if not mapped_sensor_data:
+            print("ERROR: No mapped sensor data available")
+            return False
+        
+        print("\nCalling sample_posterior with mapped observations...")
         # Sample posterior
         updated_samples = self.sample_posterior(mapped_sensor_data)
         
+        if updated_samples:
+            print("\nGot posterior samples:")
+            for name, samples in updated_samples.items():
+                if isinstance(samples, np.ndarray):
+                    print(f"  {name}:")
+                    print(f"    Mean: {np.mean(samples):.4f}")
+                    print(f"    Std: {np.std(samples):.4f}")
+        else:
+            print("ERROR: No posterior samples generated")
+            return False
+        
         # Update state directly through brain.state
+        print("\nUpdating brain state with posterior samples...")
         self.brain.state.set_posterior_samples(updated_samples)
         
+        print("Perception update completed successfully")
         return True
     
     def update_all(self, environment=None):

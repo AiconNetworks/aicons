@@ -77,6 +77,22 @@ class BayesBrain:
         self.aicon = None
         self.last_action = None
         self.last_utility = None
+        
+        # HMC configuration
+        self.hmc_config = {
+            'num_results': 1000,
+            'num_burnin_steps': 500,
+            'step_size': 0.01,  # Reduced step size for better acceptance
+            'num_leapfrog_steps': 5,  # Reduced number of steps
+            'target_accept_prob': 0.65  # Lower target acceptance rate
+        }
+        
+        # Decision parameters
+        self.decision_params = {}
+        
+        # Single uncertainty value for the entire brain
+        self.uncertainty = 0.0  # Default uncertainty
+        self.uncertainty_trigger = None  # What caused the last uncertainty change
     
     def set_aicon(self, aicon: Any) -> None:
         """
@@ -531,22 +547,64 @@ class BayesBrain:
         """
         print("\n=== Starting Belief Update ===")
         print(f"Current time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"Updating from sensor: {sensor_name}")
         
         # Get current posterior samples (from time t)
         current_samples = self.state.get_posterior_samples()
         if current_samples:
-            print(f"Using current posterior as prior (from {self.state.last_posterior_update})")
+            print(f"\nUsing current posterior as prior (from {self.state.last_posterior_update})")
+            print("Current posterior samples:")
+            for name, samples in current_samples.items():
+                if isinstance(samples, np.ndarray):
+                    print(f"  {name}:")
+                    print(f"    Mean: {np.mean(samples):.4f}")
+                    print(f"    Std: {np.std(samples):.4f}")
+        else:
+            print("\nNo current posterior samples available, will use prior")
         
+        print("\n=== Collecting Sensor Data ===")
         # Update with new sensor data
         success = self.perception.update_from_sensor(sensor_name, environment)
+        print(f"Initial sensor update success: {success}")
         
         if success:
-            # Generate new posterior samples for time t+1
+            # Get new sensor data
+            print("\n=== Getting New Sensor Data ===")
             new_sensor_data = self.perception.collect_sensor_data(environment)
+            print(f"Collected sensor data: {new_sensor_data}")
+            
+            if not new_sensor_data:
+                print("WARNING: No new sensor data available")
+                return False
+            
+            # Generate new posterior samples for time t+1
+            print("\n=== Computing Posterior ===")
+            print("Input observations for posterior:")
+            for factor, (value, reliability) in new_sensor_data.items():
+                print(f"  {factor}: value={value:.4f}, reliability={reliability:.2f}")
+            
             updated_samples = self.perception.sample_posterior(new_sensor_data)
             
+            if not updated_samples:
+                print("ERROR: Failed to generate posterior samples")
+                return False
+            
+            print("\n=== Posterior Sampling Results ===")
+            for name, samples in updated_samples.items():
+                if isinstance(samples, np.ndarray):
+                    print(f"  {name}:")
+                    print(f"    Mean: {np.mean(samples):.4f}")
+                    print(f"    Std: {np.std(samples):.4f}")
+                    print(f"    Min: {np.min(samples):.4f}")
+                    print(f"    Max: {np.max(samples):.4f}")
+            
             # Store new posterior samples (time t+1) in brain
+            print("\n=== Updating Brain State ===")
             self.state.set_posterior_samples(updated_samples)
+            
+            # Update state factors with new posterior values
+            print("\n=== Updating State Factors ===")
+            self.perception.update_state_from_posterior()
             
             # Record update in history
             self.state.update_history.append({
@@ -556,10 +614,11 @@ class BayesBrain:
                           for name, samples in updated_samples.items()}
             })
             
-            print(f"Successfully updated beliefs at {self.state.last_posterior_update}")
+            print(f"\nSuccessfully updated beliefs at {self.state.last_posterior_update}")
             print(f"Total updates in history: {len(self.state.update_history)}")
             return True
         
+        print("\nWARNING: Sensor update failed")
         return False
     
     def update_from_all_sensors(self, environment: Any = None) -> bool:
@@ -581,3 +640,42 @@ class BayesBrain:
     def _save_state(self):
         """Save current state to file."""
         pass  # No file saving needed
+    
+    def set_hmc_config(self, config: Dict[str, Any]) -> None:
+        """
+        Update the HMC configuration parameters.
+        
+        Args:
+            config: Dictionary containing HMC parameters to update. Valid keys are:
+                   - num_results: Number of samples to generate
+                   - num_burnin_steps: Number of burn-in steps
+                   - step_size: Step size for HMC
+                   - num_leapfrog_steps: Number of leapfrog steps
+                   - target_accept_prob: Target acceptance probability
+        """
+        # Update only the provided parameters
+        for key, value in config.items():
+            if key in self.hmc_config:
+                self.hmc_config[key] = value
+                print(f"Updated HMC parameter {key} to {value}")
+            else:
+                print(f"Warning: Ignoring unknown HMC parameter {key}")
+    
+    def update_uncertainty(self, new_uncertainty: float, trigger: str):
+        """
+        Update the brain's overall uncertainty and record what triggered the change.
+        
+        Args:
+            new_uncertainty: New uncertainty value
+            trigger: What caused the uncertainty change (e.g. "low_acceptance", "sampling_failed")
+        """
+        self.uncertainty = new_uncertainty
+        self.uncertainty_trigger = trigger
+        
+        # Record in history
+        self.state.update_history.append({
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "type": "uncertainty_update",
+            "new_uncertainty": new_uncertainty,
+            "trigger": trigger
+        })

@@ -586,6 +586,41 @@ class BayesianState:
             
         return state_factors
 
+    def set_state_factors(self, factors: Dict[str, Any]):
+        """
+        Set the state factors directly.
+        
+        Args:
+            factors: Dictionary of state factors with their properties
+        """
+        # Update each factor with the new values
+        for name, factor_info in factors.items():
+            if name not in self.factors:
+                continue
+                
+            factor = self.factors[name]
+            if isinstance(factor, ContinuousLatentVariable):
+                # Update continuous factor
+                factor.update(factor_info["value"], factor_info["params"]["scale"])
+            elif isinstance(factor, CategoricalLatentVariable):
+                # Update categorical factor
+                factor.update(factor_info["value"], factor_info["params"]["probs"])
+            else:  # DiscreteLatentVariable
+                # Update discrete factor
+                if "categories" in factor_info["params"]:
+                    factor.update(factor_info["value"], factor_info["params"]["probs"])
+                else:
+                    factor.update(factor_info["value"], factor_info["params"]["rate"])
+        
+        # Update timestamp
+        self.last_posterior_update = time.strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Add to update history
+        self.update_history.append({
+            "timestamp": self.last_posterior_update,
+            "factors": factors
+        })
+
     def get_prior_samples(self, num_samples: int = 100) -> Dict[str, np.ndarray]:
         """
         Generate samples from the prior distributions for each factor.
