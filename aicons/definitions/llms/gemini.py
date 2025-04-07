@@ -9,6 +9,10 @@ from typing import AsyncGenerator, Dict, Any, Optional
 import google.generativeai as genai
 from dotenv import load_dotenv
 from .base import BaseLLM
+import logging
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
@@ -39,10 +43,10 @@ class GeminiLLM(BaseLLM):
         config = self.MODELS[model_name]
         super().__init__(
             model_name=model_name,
-            context_window=config["context_window"],
-            description=config["description"]
+            context_window=config["context_window"]
         )
         self.model = None
+        self._initialize()  # Initialize immediately after super().__init__
     
     def _initialize(self) -> None:
         """Initialize Gemini client."""
@@ -61,8 +65,28 @@ class GeminiLLM(BaseLLM):
             
         Returns:
             Number of tokens
+            
+        Raises:
+            ValueError: If model is not initialized
+            Exception: If token counting fails
         """
-        return self.model.count_tokens(text).total_tokens
+        if self.model is None:
+            raise ValueError("Model not initialized")
+        
+        # Use the model's count_tokens method directly with the text
+        response = self.model.count_tokens(text)
+        gemini_tokens = response.total_tokens
+        
+        # Calculate estimated tokens based on 4 characters per token
+        estimated_tokens = len(text) // 4
+        
+        # Log the comparison for debugging
+        logger.debug(f"Token count comparison for text length {len(text)}:")
+        logger.debug(f"Gemini API count: {gemini_tokens}")
+        logger.debug(f"Estimated count (4 chars/token): {estimated_tokens}")
+        logger.debug(f"Difference: {abs(gemini_tokens - estimated_tokens)}")
+        
+        return gemini_tokens
     
     async def generate(self, prompt: str, **kwargs) -> AsyncGenerator[str, None]:
         """Generate text using Gemini API.

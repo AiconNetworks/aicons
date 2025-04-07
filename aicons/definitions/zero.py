@@ -522,54 +522,42 @@ class ZeroAIcon:
         state = self.brain.state.get_beliefs()
         posteriors = self.brain.state.get_posterior_samples()
         
-        # Group metrics by ad ID
-        ad_metrics = {}
-        for name, value in state.items():
-            if name.startswith('ad_'):
-                # Extract ad ID and metric name
-                parts = name.split('_')
-                ad_id = parts[1]
-                metric = '_'.join(parts[2:])
-                
-                if ad_id not in ad_metrics:
-                    ad_metrics[ad_id] = {}
-                ad_metrics[ad_id][metric] = value
-        
-        # Create a cleaner output format
+        # Create output format
         output = []
-        output.append("=== Ad Performance Metrics ===")
         
-        # Format metrics for each ad
-        for ad_id, metrics in ad_metrics.items():
-            output.append(f"\nAd ID: {ad_id}")
-            output.append("-" * 30)
-            
-            # Calculate statistics for each metric
-            for metric, value in metrics.items():
-                # Get the corresponding posterior samples
-                full_metric_name = f"ad_{ad_id}_{metric}"
-                if full_metric_name in posteriors:
-                    samples = posteriors[full_metric_name]
+        # Add state factors
+        if state:
+            output.append("=== State Factors ===")
+            for name, value in state.items():
+                # Get the corresponding posterior samples if available
+                if name in posteriors:
+                    samples = posteriors[name]
                     if isinstance(samples, np.ndarray) and len(samples) > 0:
                         mean = np.mean(samples)
                         std = np.std(samples)
-                        output.append(f"{metric:20s}:")
+                        output.append(f"{name:20s}:")
                         output.append(f"  Current: {value:10.2f}")
                         output.append(f"  Mean:    {mean:10.2f}")
                         output.append(f"  Std:     {std:10.2f}")
                     else:
-                        output.append(f"{metric:20s}: {value:10.2f}")
+                        output.append(f"{name:20s}: {value:10.2f}")
                 else:
-                    output.append(f"{metric:20s}: {value:10.2f}")
+                    output.append(f"{name:20s}: {value:10.2f}")
         
         # Add belief history if available
         if hasattr(self.brain, 'update_history') and self.brain.update_history:
-            output.append("\n=== Belief Update History ===")
+            if output:  # Add a newline if we already have content
+                output.append("")
+            output.append("=== Belief Update History ===")
             for update in self.brain.update_history:
                 output.append(f"\nUpdate at {update.get('timestamp', 'unknown time')}:")
                 for name, value in update.get('values', {}).items():
                     output.append(f"  {name}: {value}")
         
+        # If we have no content at all, return a message indicating empty state
+        if not output:
+            return "No state factors defined"
+            
         return "\n".join(output)
 
     def get_utility_function_text(self) -> str:
@@ -595,23 +583,54 @@ class ZeroAIcon:
 
     def get_token_usage_report(self) -> Dict[str, Any]:
         """Get a report of token usage across components with actual content."""
+        # Get the raw content first
+        state_repr = self.get_state_representation()
+        
+        # Convert numpy arrays to lists for JSON serialization
+        def convert_numpy(obj):
+            if isinstance(obj, np.ndarray):
+                return obj.tolist()
+            elif isinstance(obj, dict):
+                return {k: convert_numpy(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_numpy(item) for item in obj]
+            return obj
+            
+        state_repr = convert_numpy(state_repr)
+        state_repr_str = json.dumps(state_repr)
+        
+        action_space_str = str(self.brain.action_space) if self.brain.action_space else ""
+        utility_str = str(self.brain.utility_function) if self.brain.utility_function else ""
+        
+        # Count tokens and compare with estimation
+        def count_and_compare(text: str, component: str) -> int:
+            tokens = self._count_tokens(text)
+            estimated = len(text) // 4
+            print(f"{component}: {tokens} tokens (est: {estimated})")
+            return tokens
+        
+        # Count tokens for each component
+        state_repr_tokens = count_and_compare(state_repr_str, "State Representation")
+        action_space_tokens = count_and_compare(action_space_str, "Action Space")
+        utility_tokens = count_and_compare(utility_str, "Utility Function")
+        
         return {
             "state_representation": {
-                "tokens": self.token_usage["state_representation"],
+                "tokens": state_repr_tokens,
                 "content": self.get_state_representation_text()
             },
             "utility_function": {
-                "tokens": self.token_usage["utility_function"],
+                "tokens": utility_tokens,
                 "content": self.get_utility_function_text()
             },
             "action_space": {
-                "tokens": self.token_usage["action_space"],
+                "tokens": action_space_tokens,
                 "content": self.get_action_space_text()
             },
             "inference": {
                 "tokens": self.token_usage["inference"],
                 "content": self.get_inference_text()
             },
-            "total_used": sum(self.token_usage.values()),
-            "remaining": self.llm.context_window - sum(self.token_usage.values())
+            "total_used": state_repr_tokens + action_space_tokens + utility_tokens + self.token_usage["inference"],
+            "remaining": self.llm.context_window - (state_repr_tokens + action_space_tokens + utility_tokens + self.token_usage["inference"])
         } 
