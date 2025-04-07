@@ -236,18 +236,27 @@ class BayesianPerception:
         
         # If observations are provided, use HMC for posterior sampling
         print("\nComputing posterior with observations using HMC")
-        return self._sample_posterior_hierarchical(observations)
-    
-    def _sample_posterior_hierarchical(self, observations):
-        """
-        Sample from the posterior distribution using hierarchical sampling.
         
-        Args:
-            observations: Dictionary mapping factor names to (value, reliability) tuples
-            
-        Returns:
-            Dictionary mapping factor names to posterior samples
-        """
+        # Get HMC configuration from brain
+        hmc_config = self.brain.hmc_config
+        
+        # Create bijectors based on factor constraints
+        bijectors = {}
+        for name, factor in self.brain.state.get_state_factors().items():
+            if factor.get("type") == "continuous":
+                # For metrics that should be strictly positive (impressions, clicks, spend)
+                if any(metric in name.lower() for metric in ['impressions', 'clicks', 'spend']):
+                    bijectors[name] = tfb.Exp()
+                # For metrics that are bounded (like probabilities or rates)
+                elif "lower_bound" in factor and "upper_bound" in factor:
+                    bijectors[name] = tfb.Sigmoid(
+                        low=factor["lower_bound"],
+                        high=factor["upper_bound"]
+                    )
+                # For other continuous variables that should be positive
+                else:
+                    bijectors[name] = tfb.Exp()
+        
         # Convert observations to tensors
         observed_data = {}
         for name, (value, reliability) in observations.items():
@@ -258,32 +267,48 @@ class BayesianPerception:
             # Combine prior and likelihood
             log_prob = 0.0
             
+            # Create a mapping of factor names to their indices
+            factor_indices = {name: i for i, (name, _) in enumerate(self.brain.state.get_state_factors().items())}
+            
             # Add prior terms
-            for i, (name, factor) in enumerate(self.brain.state.get_state_factors().items()):
+            for name, factor in self.brain.state.get_state_factors().items():
                 if factor["type"] == "continuous":
+                    # Get the index for this factor
+                    idx = factor_indices[name]
+                    # Apply inverse bijector to get constrained value
+                    if name in bijectors:
+                        value = bijectors[name].inverse(args[idx])
+                    else:
+                        value = args[idx]
+                        
                     # Normal distribution
                     dist = tfd.Normal(
                         loc=factor["params"]["loc"],
                         scale=factor["params"]["scale"]
                     )
-                    log_prob += dist.log_prob(args[i])
+                    log_prob += dist.log_prob(value)
             
             # Add likelihood terms
-            for i, (name, (value, reliability)) in enumerate(observations.items()):
+            for name, (value, reliability) in observations.items():
                 if name in self.brain.state.get_state_factors():
                     factor = self.brain.state.get_state_factors()[name]
                     if factor["type"] == "continuous":
+                        # Get the index for this factor
+                        idx = factor_indices[name]
+                        # Apply inverse bijector to get constrained value
+                        if name in bijectors:
+                            param_value = bijectors[name].inverse(args[idx])
+                        else:
+                            param_value = args[idx]
+                            
                         # Normal distribution with reliability-weighted variance
                         dist = tfd.Normal(
                             loc=value,
                             scale=factor["params"]["scale"] / reliability
                         )
-                        log_prob += dist.log_prob(args[i])
+                        log_prob += dist.log_prob(param_value)
             
             return log_prob
-        
-        # Get HMC configuration from brain
-        hmc_config = self.brain.hmc_config
         
         # Create HMC kernel
         hmc_kernel = tfp.mcmc.HamiltonianMonteCarlo(
@@ -299,11 +324,15 @@ class BayesianPerception:
             target_accept_prob=hmc_config['target_accept_prob']
         )
         
-        # Initial state
+        # Initial state - transform to unconstrained space
         initial_state = []
         for name, factor in self.brain.state.get_state_factors().items():
             if factor["type"] == "continuous":
-                initial_state.append(tf.convert_to_tensor(factor["value"], dtype=tf.float32))
+                value = tf.convert_to_tensor(factor["value"], dtype=tf.float32)
+                if name in bijectors:
+                    # Transform to unconstrained space
+                    value = bijectors[name].forward(value)
+                initial_state.append(value)
         
         # Run HMC
         @tf.function
@@ -327,6 +356,9 @@ class BayesianPerception:
             for i, (name, factor) in enumerate(self.brain.state.get_state_factors().items()):
                 if factor["type"] == "continuous":
                     samples_i = samples[i].numpy()
+                    # Transform back to constrained space
+                    if name in bijectors:
+                        samples_i = bijectors[name].forward(samples_i)
                     self.posterior_samples[name] = samples_i
             
             # If acceptance rate is low, increase uncertainty once for the entire run

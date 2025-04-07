@@ -33,6 +33,7 @@ import os
 import json
 import ast
 import tensorflow as tf
+import tensorflow_probability as tfp
 
 # Import core components
 from .utility_function import create_utility
@@ -84,7 +85,13 @@ class BayesBrain:
             'num_burnin_steps': 500,
             'step_size': 0.01,  # Reduced step size for better acceptance
             'num_leapfrog_steps': 5,  # Reduced number of steps
-            'target_accept_prob': 0.65  # Lower target acceptance rate
+            'target_accept_prob': 0.65,  # Lower target acceptance rate
+            'use_bijectors': True,  # Enable bijectors for constrained sampling
+            'constraint_bijectors': {
+                'lower_bound': tfp.bijectors.Exp(),  # For positive-only variables
+                'upper_bound': tfp.bijectors.Sigmoid(),  # For bounded variables
+                'both_bounds': tfp.bijectors.Sigmoid()  # For variables with both bounds
+            }
         }
         
         # Decision parameters
