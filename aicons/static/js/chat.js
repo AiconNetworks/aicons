@@ -53,6 +53,7 @@
   // Add these variables at the top with other state variables
   let currentAicon = "default";
   let aiconSelect;
+  let createMarketingBtn;
 
   /**
    * Initialize the app when DOM is loaded
@@ -72,6 +73,7 @@
     contextWindowPanel = id("context-window-panel");
     configBtn = id("config-btn");
     configPanel = id("config-panel");
+    createMarketingBtn = id("create-marketing-btn");
     
     // Get all close buttons
     closeBtns = document.querySelectorAll(".close-btn");
@@ -100,6 +102,7 @@
     messageInput.addEventListener("keypress", handleKeyPress);
     contextWindowBtn.addEventListener("click", openContextWindow);
     configBtn.addEventListener("click", openConfigPanel);
+    createMarketingBtn.addEventListener("click", handleCreateMarketing);
     
     // Setup close buttons
     closeBtns.forEach(btn => {
@@ -1292,6 +1295,42 @@
   }
 
   /**
+   * Handles the creation of a marketing AIcon
+   */
+  function handleCreateMarketing() {
+    // Show loading state
+    const originalText = createMarketingBtn.textContent;
+    createMarketingBtn.textContent = "Creating Marketing AIcon...";
+    
+    // Create marketing AIcon
+    fetch("/api/aicons/marketing", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      }
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        // Reload AIcons list
+        loadAicons();
+        // Show success message
+        alert("Marketing AIcon created successfully!");
+      } else {
+        alert("Error creating Marketing AIcon: " + data.error);
+      }
+    })
+    .catch(error => {
+      console.error("Error creating Marketing AIcon:", error);
+      alert("Error creating Marketing AIcon. See console for details.");
+    })
+    .finally(() => {
+      // Restore original text
+      createMarketingBtn.textContent = originalText;
+    });
+  }
+
+  /**
    * Loads AIcons from the server
    */
   function loadAicons() {
@@ -1300,6 +1339,8 @@
       .then(data => {
         // Update the select dropdown
         aiconSelect.innerHTML = '';
+        
+        // Add existing AIcons
         data.aicons.forEach(aicon => {
           const option = document.createElement('option');
           option.value = aicon;
@@ -1321,6 +1362,7 @@
    */
   function handleAiconChange() {
     const newAicon = aiconSelect.value;
+    
     if (newAicon === currentAicon) return;
     
     // Set the new AIcon as current

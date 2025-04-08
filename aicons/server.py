@@ -318,18 +318,31 @@ def get_configuration():
     try:
         # Get sensors
         sensors = []
-        if hasattr(aicons[current_aicon]["instance"].brain, 'sensors'):
-            for name, sensor in aicons[current_aicon]["instance"].brain.sensors.items():
+        aicon_instance = aicons[current_aicon]["instance"]
+        
+        # Log AIcon instance details
+        logger.info(f"Getting configuration for AIcon: {current_aicon}")
+        logger.info(f"AIcon instance: {aicon_instance}")
+        logger.info(f"Has brain: {hasattr(aicon_instance, 'brain')}")
+        
+        # Check if the AIcon has sensors
+        if hasattr(aicon_instance, 'brain') and hasattr(aicon_instance.brain, 'sensors'):
+            logger.info(f"Has sensors: {aicon_instance.brain.sensors}")
+            for sensor in aicon_instance.brain.sensors:
+                logger.info(f"Found sensor: {sensor.__class__.__name__}")
                 sensors.append({
-                    'name': name,
+                    'name': sensor.__class__.__name__,
                     'sensor_type': sensor.__class__.__name__,
                     'reliability': getattr(sensor, 'reliability', None)
                 })
         
+        # Log final sensors list
+        logger.info(f"Final sensors list: {sensors}")
+        
         # Get state factors with ALL properties
         state_factors = []
-        if hasattr(aicons[current_aicon]["instance"].brain, 'state') and hasattr(aicons[current_aicon]["instance"].brain.state, 'get_state_factors'):
-            factors = aicons[current_aicon]["instance"].brain.state.get_state_factors()
+        if hasattr(aicon_instance.brain, 'state') and hasattr(aicon_instance.brain.state, 'get_state_factors'):
+            factors = aicon_instance.brain.state.get_state_factors()
             for name, factor in factors.items():
                 # Get factor type
                 factor_type = factor.__class__.__name__.replace('LatentVariable', '').lower()
@@ -367,19 +380,19 @@ def get_configuration():
         
         # Get action space
         action_space = None
-        if aicons[current_aicon]["instance"].brain.action_space:
+        if aicon_instance.brain.action_space:
             action_space = {
                 'space_type': 'custom',  # Default
-                'dimensions': len(aicons[current_aicon]["instance"].brain.action_space.dimensions) if hasattr(aicons[current_aicon]["instance"].brain.action_space, 'dimensions') else 0,
-                'description': str(aicons[current_aicon]["instance"].brain.action_space)
+                'dimensions': len(aicon_instance.brain.action_space.dimensions) if hasattr(aicon_instance.brain.action_space, 'dimensions') else 0,
+                'description': str(aicon_instance.brain.action_space)
             }
         
         # Get utility function
         utility_function = None
-        if aicons[current_aicon]["instance"].brain.utility_function:
+        if aicon_instance.brain.utility_function:
             utility_function = {
                 'utility_type': 'custom',  # Default
-                'description': str(aicons[current_aicon]["instance"].brain.utility_function)
+                'description': str(aicon_instance.brain.utility_function)
             }
         
         return jsonify({
@@ -622,7 +635,7 @@ def define_action_space():
                 return jsonify({'success': False, 'error': 'Items list is required'}), 400
             
             # Define the action space
-            action_space = aicons[current_aicon]["instance"].define_action_space(
+            aicons[current_aicon]["instance"].define_action_space(
                 space_type="budget_allocation",
                 total_budget=total_budget,
                 items=items,
@@ -667,7 +680,7 @@ def define_utility_function():
                 return jsonify({'success': False, 'error': 'Ad names list is required'}), 400
             
             # Define the utility function
-            utility = aicons[current_aicon]["instance"].define_utility_function(
+            aicons[current_aicon]["instance"].define_utility_function(
                 utility_type="marketing_roi",
                 revenue_per_sale=revenue_per_sale,
                 num_days=num_days,
@@ -682,6 +695,79 @@ def define_utility_function():
     except Exception as e:
         logger.error(f"Error defining utility function: {str(e)}", exc_info=True)
         return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/aicons/marketing', methods=['POST'])
+def create_marketing_aicon():
+    """Create a new marketing-focused AIcon with predefined configuration."""
+    try:
+        # Create the marketing AIcon
+        name = "marketing_aicon"
+        if name in aicons:
+            return jsonify({'error': 'Marketing AIcon already exists'}), 400
+            
+        # Create the AIcon instance
+        marketing_aicon = ZeroAIcon(
+            name=name,
+            description="Marketing-focused AIcon for ad optimization",
+            model_name="deepseek-r1:7b"
+        )
+        
+        # Add Meta Ads sensor
+        from aicons.bayesbrainGPT.sensors.meta_s.meta_ads_sales_sensor import MetaAdsSalesSensor
+        
+        # Hardcoded Meta Ads credentials
+        access_token = "EAAZAn8wmq1IEBOZCz8oyDZBBgiazAgnQKIoAr4mFTbkV7jxi6t3APzOSxFybXNIkBgwQACdagbs5lFE8tpnNOBOOpWtS3KjZAdf9MNAlySpwEaDrX32oQwUTNmOZAaSXjT5Os5Q8YqRo57tXOUukB7QtcO8nQ8JuqrnnshCr7A0giynZBnJKfuPakrZBWoZD"
+        ad_account_id = "act_252267674525035"
+        campaign_id = "120218631288730217"
+        
+        sensor = MetaAdsSalesSensor(
+            name="meta_ads",
+            reliability=0.9,
+            access_token=access_token,
+            ad_account_id=ad_account_id,
+            campaign_id=campaign_id,
+            api_version="v18.0",
+            time_granularity="hour"
+        )
+        
+        marketing_aicon.add_sensor("meta_ads", sensor)
+        
+        # Get active ads and their IDs
+        active_ads = sensor.get_active_ads()
+        ad_ids = [ad['ad_id'] for ad in active_ads]
+        
+        # Define action space
+        marketing_aicon.define_action_space(
+            space_type="budget_allocation",
+            total_budget=1000.0,
+            items=ad_ids,
+            budget_step=100.0,
+            min_budget=0.0
+        )
+        
+        # Define utility function
+        marketing_aicon.define_utility_function(
+            utility_type="marketing_roi",
+            revenue_per_sale=50.0,
+            num_days=1,
+            ad_names=ad_ids
+        )
+        
+        # Store the AIcon
+        aicons[name] = {
+            "instance": marketing_aicon,
+            "chat_history": []
+        }
+        
+        # Set as current AIcon
+        global current_aicon
+        current_aicon = name
+        
+        return jsonify({'success': True, 'name': name})
+        
+    except Exception as e:
+        logger.error(f"Error creating marketing AIcon: {str(e)}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
 
 def run_server(host='0.0.0.0', port=8000, debug=False):
     """Run the Flask server."""

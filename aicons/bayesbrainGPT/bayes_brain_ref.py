@@ -78,6 +78,7 @@ class BayesBrain:
         self.aicon = None
         self.last_action = None
         self.last_utility = None
+        self.sensors = []  # Initialize sensors list
         
         # HMC configuration
         self.hmc_config = {
@@ -435,6 +436,10 @@ class BayesBrain:
             from aicons.bayesbrainGPT.perception.perception import BayesianPerception
             self.perception = BayesianPerception(self)
         
+        # Initialize sensors list if not already done
+        if not hasattr(self, 'sensors'):
+            self.sensors = []
+        
         # Auto-create required factors if sensor has get_expected_factors method
         if hasattr(sensor, 'get_expected_factors'):
             expected_factors = sensor.get_expected_factors()
@@ -518,6 +523,10 @@ class BayesBrain:
         
         # Register the sensor with perception
         self.perception.register_sensor(name, sensor, factor_mapping)
+        
+        # Store the sensor in the brain's sensors list
+        self.sensors.append(sensor)
+        
         return sensor
     
     def get_sensors(self) -> List[Callable]:
