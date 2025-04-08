@@ -349,9 +349,11 @@
    * Loads the chat history from the server
    */
   function loadChatHistory() {
+    console.log("Loading chat history..."); // Debug log
     fetch("/api/history")
       .then(response => response.json())
       .then(data => {
+        console.log("Received history data:", data); // Debug log
         data.history.forEach(msg => {
           appendMessage(msg.role, msg.content);
         });
@@ -462,6 +464,7 @@
           
           // Decode the chunk
           const chunk = decoder.decode(value, { stream: true });
+          console.log("Received chunk:", chunk); // Debug log
           
           // Process each event (data: {...}\n\n)
           const events = chunk.split("\n\n");
@@ -470,6 +473,7 @@
               try {
                 const jsonData = event.slice(6); // Remove "data: "
                 const data = JSON.parse(jsonData);
+                console.log("Parsed data:", data); // Debug log
                 
                 // Hide typing indicator
                 typingIndicator.style.display = "none";
@@ -606,8 +610,11 @@
    * Appends a message to the chat
    */
   function appendMessage(role, content) {
+    console.log("Appending message:", { role, content }); // Debug log
+    
     // Check if content contains thinking tags
     if (role === "assistant" && content.includes("<think>") && content.includes("</think>")) {
+      console.log("Found thinking tags in content"); // Debug log
       // Split the content into thinking and response parts
       const parts = content.split(/<think>|<\/think>/);
       if (parts.length >= 3) {
@@ -634,8 +641,15 @@
         `;
         
         // Add both to chat
-        messagesContainer.insertBefore(thinkingDiv, typingIndicator);
-        messagesContainer.insertBefore(responseDiv, typingIndicator);
+        const typingIndicator = id("typing-indicator");
+        console.log("Typing indicator exists:", !!typingIndicator); // Debug log
+        if (typingIndicator && typingIndicator.parentNode === messagesContainer) {
+          messagesContainer.insertBefore(thinkingDiv, typingIndicator);
+          messagesContainer.insertBefore(responseDiv, typingIndicator);
+        } else {
+          messagesContainer.appendChild(thinkingDiv);
+          messagesContainer.appendChild(responseDiv);
+        }
         return;
       }
     }
@@ -656,7 +670,15 @@
     }
     
     messageDiv.appendChild(contentDiv);
-    messagesContainer.insertBefore(messageDiv, typingIndicator);
+    
+    // Add to chat
+    const typingIndicator = id("typing-indicator");
+    console.log("Typing indicator exists for regular message:", !!typingIndicator); // Debug log
+    if (typingIndicator && typingIndicator.parentNode === messagesContainer) {
+      messagesContainer.insertBefore(messageDiv, typingIndicator);
+    } else {
+      messagesContainer.appendChild(messageDiv);
+    }
   }
 
   /**
@@ -1329,9 +1351,6 @@
     // Add spinner to the page
     document.body.appendChild(spinner);
     
-    // Clear the chat messages container
-    messagesContainer.innerHTML = '';
-    
     // Create marketing AIcon
     fetch("/api/aicons/marketing", {
       method: "POST",
@@ -1364,6 +1383,8 @@
         loadAicons();
         // Reload configuration for the new AIcon
         loadConfiguration();
+        // Load chat history for the new AIcon
+        loadChatHistory();
         // Show success message
         alert("Marketing AIcon created successfully!");
       } else {
@@ -1421,9 +1442,6 @@
     const originalText = aiconSelect.options[aiconSelect.selectedIndex].text;
     aiconSelect.disabled = true;
     aiconSelect.options[aiconSelect.selectedIndex].text = "Switching...";
-    
-    // Clear the chat messages container
-    messagesContainer.innerHTML = '';
     
     // Update current AIcon
     currentAicon = selectedAicon;
