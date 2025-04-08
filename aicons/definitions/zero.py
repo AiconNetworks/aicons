@@ -20,6 +20,7 @@ import time
 from datetime import datetime
 import asyncio
 import aiohttp
+import tensorflow as tf
 
 # Import BayesBrain and its components
 from ..bayesbrainGPT.bayes_brain_ref import BayesBrain
@@ -203,6 +204,88 @@ class ZeroAIcon:
             True if update was successful
         """
         return self.brain.update_from_all_sensors(environment)
+    
+    def find_best_action(self, num_samples: int = 100) -> Tuple[Dict[str, Any], float]:
+        """
+        Find the best action based on current beliefs and utility function.
+        
+        Args:
+            num_samples: Number of posterior samples to use for evaluation
+            
+        Returns:
+            Tuple of (best_action, expected_utility)
+        """
+        # Get posterior samples
+        posterior_samples = self.brain.state.get_posterior_samples(num_samples)
+        if not posterior_samples:
+            posterior_samples = self.brain.state.get_prior_samples(num_samples)
+        
+        # Convert posterior samples to tensors
+        posterior_tensors = {}
+        for name, samples in posterior_samples.items():
+            if isinstance(samples, np.ndarray):
+                posterior_tensors[name] = tf.constant(samples, dtype=tf.float32)
+            else:
+                # Handle non-array values
+                try:
+                    # Try to convert to numpy array first
+                    samples_array = np.array(samples)
+                    posterior_tensors[name] = tf.constant(samples_array, dtype=tf.float32)
+                except:
+                    # If conversion fails, use scalar value
+                    posterior_tensors[name] = tf.constant([float(samples)], dtype=tf.float32)
+        
+        # Get possible actions from action space
+        possible_actions = self.brain.action_space.enumerate_actions()
+        total_actions = len(possible_actions)
+        print(f"\nEvaluating {total_actions} possible actions")
+        
+        # Initialize action utilities dictionary
+        action_utilities = {}
+        
+        # Evaluate each possible action
+        best_action = None
+        best_utility = float('-inf')
+        last_progress = -1
+        
+        for i, action in enumerate(possible_actions):
+            # Show progress every 1% or at least every 100 actions
+            progress = int((i / total_actions) * 100)
+            if progress != last_progress and (progress % 1 == 0 or i % 100 == 0):
+                print(f"\rEvaluating actions: {i+1}/{total_actions} ({progress}%)", end="")
+                last_progress = progress
+            
+            # Convert action values to float32
+            action_float32 = {k: float(v) for k, v in action.items()}
+            
+            # Convert action to tensor format
+            if hasattr(self.brain.utility_function, 'dimensions') and self.brain.utility_function.dimensions is not None:
+                action_tensor = tf.constant([action_float32.get(dim.name, 0.0) for dim in self.brain.utility_function.dimensions])
+            else:
+                # Try to identify budget values from keys
+                budget_values = [v for k, v in action_float32.items() if k.endswith('_budget')]
+                if budget_values:
+                    action_tensor = tf.constant(budget_values)
+                else:
+                    # Fallback to all numeric values in the action
+                    numeric_values = [v for k, v in action_float32.items() 
+                                     if isinstance(v, (int, float))]
+                    action_tensor = tf.constant(numeric_values) if numeric_values else tf.constant([0.0])
+            
+            # Calculate utility using evaluate_tf
+            utility_tensor = self.brain.utility_function.evaluate_tf(action_tensor, posterior_tensors)
+            utility = float(tf.reduce_mean(utility_tensor))
+            
+            # Store utility
+            action_utilities[str(action)] = utility
+            
+            # Check if this is the best action so far
+            if utility > best_utility:
+                best_utility = utility
+                best_action = action
+        
+        print("\n")  # New line after progress
+        return best_action, best_utility
     
     def get_state(self) -> Dict[str, Any]:
         """Get the current state beliefs."""

@@ -86,6 +86,12 @@ def main():
     logger.info("Updating beliefs from Meta Ads sensor...")
     aicon.update_from_sensor("meta_ads")
 
+    # Find best action
+    logger.info("Finding best action...")
+    best_action, expected_utility = aicon.find_best_action(num_samples=100)
+    logger.info(f"Best action found: {best_action}")
+    logger.info(f"Expected utility: {expected_utility}")
+
     # Print token usage report
     logger.info("\nToken Usage Report:")
     print(json.dumps(aicon.get_token_usage_report(), indent=2))
