@@ -7,6 +7,7 @@ The context window is split into four parts:
 2. Utility Function
 3. Action Space
 4. Inference
+5. Tools
 """
 
 from typing import Dict, Any, Optional, List, Tuple, Literal, Callable, Union, AsyncGenerator
@@ -46,6 +47,10 @@ from ..bayesbrainGPT.state_representation import BayesianState
 # Import LLM implementations
 from .llms import create_llm, BaseLLM
 
+# Import tools
+from ..tools.speak_out_loud import SpeakOutLoudTool
+from ..tools.ask_question import AskQuestionTool
+
 # Load environment variables
 load_dotenv()
 
@@ -69,7 +74,8 @@ class ZeroAIcon:
             "state_representation": 0,
             "utility_function": 0,
             "action_space": 0,
-            "inference": 0
+            "inference": 0,
+            "tools": 0
         }
         
         # Initialize LLM
@@ -82,6 +88,10 @@ class ZeroAIcon:
         )
         self.brain.set_aicon(self)  # Set reference to this AIcon
         
+        # Initialize tools
+        self.tools = {}
+        self._initialize_default_tools()
+        
         # Setup logging
         logger.info(f"Initialized {self.name} with {model_name}")
         logger.info(f"Context window: {self.llm.context_window:,} tokens")
@@ -89,6 +99,45 @@ class ZeroAIcon:
         # Initialize action tracking
         self._current_action = None
         self._action_history = []
+    
+    def _initialize_default_tools(self):
+        """Initialize default tools for the AIcon."""
+        # Add speak out loud tool
+        speak_tool = SpeakOutLoudTool()
+        self.add_tool(speak_tool)
+        
+        # Add ask question tool
+        ask_tool = AskQuestionTool()
+        self.add_tool(ask_tool)
+    
+    def add_tool(self, tool):
+        """Add a tool to the AIcon."""
+        self.tools[tool.name] = tool
+        logger.info(f"Added tool: {tool.name}")
+    
+    def get_tool(self, tool_name: str):
+        """Get a tool by name."""
+        return self.tools.get(tool_name)
+    
+    def get_available_tools(self) -> Dict[str, Any]:
+        """Get all available tools."""
+        return {name: {
+            "name": tool.name,
+            "description": tool.description
+        } for name, tool in self.tools.items()}
+    
+    def execute_tool(self, tool_name: str, **kwargs) -> bool:
+        """Execute a tool by name with given arguments."""
+        tool = self.get_tool(tool_name)
+        if not tool:
+            logger.error(f"Tool not found: {tool_name}")
+            return False
+        
+        try:
+            return tool.execute(**kwargs)
+        except Exception as e:
+            logger.error(f"Error executing tool {tool_name}: {e}")
+            return False
     
     def _count_tokens(self, text: str) -> int:
         """Count tokens in text using LLM's token counter."""
@@ -494,7 +543,8 @@ class ZeroAIcon:
             "state": self.brain.state.get_beliefs(),
             "posteriors": self.brain.state.get_posterior_samples(),
             "utility_function": str(self.brain.utility_function),
-            "action_space": str(self.brain.action_space)
+            "action_space": str(self.brain.action_space),
+            "tools": self.get_available_tools()
         }
     
     async def make_inference(self, prompt: str) -> str:
@@ -651,6 +701,7 @@ class ZeroAIcon:
         action_space_str = self.get_action_space_text()
         utility_str = self.get_utility_function_text()
         inference_str = self.get_inference_text()
+        tools_str = json.dumps(self.get_available_tools(), indent=2)
         
         # Count tokens and compare with estimation
         def count_and_compare(text: str, component: str) -> int:
@@ -664,6 +715,7 @@ class ZeroAIcon:
         action_space_tokens = count_and_compare(action_space_str, "Action Space")
         utility_tokens = count_and_compare(utility_str, "Utility Function")
         inference_tokens = count_and_compare(inference_str, "Inference")
+        tools_tokens = count_and_compare(tools_str, "Tools")
         
         # Get current action
         current_action = self.get_current_action()
@@ -685,12 +737,16 @@ class ZeroAIcon:
                 "tokens": inference_tokens,
                 "content": inference_str
             },
+            "tools": {
+                "tokens": tools_tokens,
+                "content": tools_str
+            },
             "current_action": {
                 "action": current_action,
                 "timestamp": datetime.now().isoformat() if current_action else None
             },
-            "total_used": state_repr_tokens + action_space_tokens + utility_tokens + inference_tokens,
-            "remaining": self.llm.context_window - (state_repr_tokens + action_space_tokens + utility_tokens + inference_tokens)
+            "total_used": state_repr_tokens + action_space_tokens + utility_tokens + inference_tokens + tools_tokens,
+            "remaining": self.llm.context_window - (state_repr_tokens + action_space_tokens + utility_tokens + inference_tokens + tools_tokens)
         }
 
     def get_current_action(self):

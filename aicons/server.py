@@ -17,6 +17,10 @@ import logging
 # Import ZeroAIcon
 from aicons.definitions.zero import ZeroAIcon
 
+# Import tools
+from aicons.tools.speak_out_loud import SpeakOutLoudTool
+from aicons.tools.ask_question import AskQuestionTool
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -75,8 +79,17 @@ def create_aicon():
         if name in aicons:
             return jsonify({'error': 'AIcon with this name already exists'}), 400
             
+        # Create the AIcon instance
+        aicon = ZeroAIcon(name=name, description=description, model_name=model_name)
+        
+        # Add tools to the AIcon
+        speak_tool = SpeakOutLoudTool()
+        ask_tool = AskQuestionTool()
+        aicon.add_tool(speak_tool)
+        aicon.add_tool(ask_tool)
+            
         aicons[name] = {
-            "instance": ZeroAIcon(name=name, description=description, model_name=model_name),
+            "instance": aicon,
             "chat_history": []
         }
         
@@ -711,6 +724,12 @@ def create_marketing_aicon():
             description="Marketing-focused AIcon for ad optimization",
             model_name="deepseek-r1:7b"
         )
+        
+        # Add tools to the marketing AIcon
+        speak_tool = SpeakOutLoudTool()
+        ask_tool = AskQuestionTool()
+        marketing_aicon.add_tool(speak_tool)
+        marketing_aicon.add_tool(ask_tool)
         
         # Add Meta Ads sensor
         from aicons.bayesbrainGPT.sensors.meta_s.meta_ads_sales_sensor import MetaAdsSalesSensor

@@ -215,67 +215,63 @@
    * Updates the token usage display with the provided data
    */
   function updateTokenUsageDisplay(data) {
-    if (!data || typeof data.total_used !== 'number') {
-      console.error("Invalid token usage data:", data);
-      id("total-usage-text").textContent = "Invalid data";
-      return;
-    }
-
     // Update total usage bar
-    const totalUsed = data.total_used || 0;
-    const totalAvailable = totalUsed + (data.remaining || 0);
+    const totalUsed = data.total_used;
+    const totalAvailable = data.remaining + totalUsed;
+    const usagePercentage = (totalUsed / totalAvailable) * 100;
     
-    // Handle case where both values are 0 (no context used yet)
-    const usagePercent = totalAvailable === 0 ? 0 : Math.round((totalUsed / totalAvailable) * 100);
+    const totalUsageBar = id('total-usage-bar');
+    totalUsageBar.style.width = `${usagePercentage}%`;
+    id('total-usage-text').textContent = `${Math.round(usagePercentage)}%`;
     
-    const totalBar = id("total-usage-bar");
-    const totalText = id("total-usage-text");
+    // Update component displays
+    updateComponentDisplay('state', data.state_representation);
+    updateComponentDisplay('utility', data.utility_function);
+    updateComponentDisplay('action', data.action_space);
+    updateComponentDisplay('inference', data.inference);
+    updateComponentDisplay('tools', data.tools);
     
-    totalBar.style.width = `${usagePercent}%`;
-    
-    if (totalAvailable === 0) {
-      totalText.textContent = "No context used yet";
+    // Update current action
+    const currentAction = data.current_action;
+    if (currentAction && currentAction.action) {
+        id('current-action').textContent = JSON.stringify(currentAction.action, null, 2);
     } else {
-      totalText.textContent = `${usagePercent}% (${totalUsed.toLocaleString()} / ${totalAvailable.toLocaleString()} tokens)`;
+        id('current-action').textContent = 'No current action';
     }
-    
-    // Set bar color based on usage
-    if (usagePercent > 90) {
-      totalBar.style.backgroundColor = "#dc3545"; // Red
-    } else if (usagePercent > 70) {
-      totalBar.style.backgroundColor = "#ffc107"; // Yellow
-    } else {
-      totalBar.style.backgroundColor = "#4a69bd"; // Blue
-    }
-    
-    // Update component details
-    updateComponentDisplay("state", data.state_representation);
-    updateComponentDisplay("utility", data.utility_function);
-    updateComponentDisplay("action", data.action_space);
-    updateComponentDisplay("inference", data.inference);
   }
 
   /**
    * Updates a specific component's display
    */
   function updateComponentDisplay(prefix, componentData) {
-    if (!componentData) {
-      console.error(`Missing component data for ${prefix}`);
-      return;
-    }
-
     const tokensElement = id(`${prefix}-tokens`);
     const contentElement = id(`${prefix}-content`);
     
-    // Display token count
-    const tokens = componentData.tokens || 0;
-    tokensElement.textContent = `${tokens.toLocaleString()} tokens`;
-    
-    // Format the content
-    if (componentData.content && componentData.content.trim()) {
-      contentElement.textContent = componentData.content;
+    if (componentData) {
+        tokensElement.textContent = `${componentData.tokens} tokens`;
+        
+        // Format the content based on the component type
+        let formattedContent = componentData.content;
+        if (prefix === 'tools') {
+            // Format tools as a list
+            const tools = JSON.parse(componentData.content);
+            formattedContent = Object.entries(tools)
+                .map(([name, tool]) => {
+                    return `<div class="tool-item">
+                        <strong>${tool.name}</strong>
+                        <p>${tool.description}</p>
+                    </div>`;
+                })
+                .join('');
+        } else {
+            // For other components, just display the raw content
+            formattedContent = componentData.content;
+        }
+        
+        contentElement.innerHTML = formattedContent;
     } else {
-      contentElement.textContent = "No content available";
+        tokensElement.textContent = '0 tokens';
+        contentElement.textContent = 'No data available';
     }
   }
 
