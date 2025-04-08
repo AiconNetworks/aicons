@@ -1299,8 +1299,38 @@
    */
   function handleCreateMarketing() {
     // Show loading state
+    const createMarketingBtn = id("create-marketing-btn");
     const originalText = createMarketingBtn.textContent;
     createMarketingBtn.textContent = "Creating Marketing AIcon...";
+    createMarketingBtn.disabled = true;
+    
+    // Create spinner
+    const spinner = document.createElement("div");
+    spinner.className = "spinner";
+    spinner.innerHTML = `
+      <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Loading...</span>
+      </div>
+      <p>Creating Marketing AIcon...</p>
+    `;
+    spinner.style.cssText = `
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 1000;
+      text-align: center;
+      background: rgba(255, 255, 255, 0.9);
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    `;
+    
+    // Add spinner to the page
+    document.body.appendChild(spinner);
+    
+    // Clear the chat messages container
+    messagesContainer.innerHTML = '';
     
     // Create marketing AIcon
     fetch("/api/aicons/marketing", {
@@ -1312,21 +1342,44 @@
     .then(response => response.json())
     .then(data => {
       if (data.success) {
+        // Set the new AIcon as current
+        currentAicon = "marketing_aicon";
+        
+        // Update server-side current AIcon
+        return fetch("/api/aicons/current", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ name: "marketing_aicon" })
+        });
+      } else {
+        throw new Error(data.error || "Failed to create marketing AIcon");
+      }
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
         // Reload AIcons list
         loadAicons();
+        // Reload configuration for the new AIcon
+        loadConfiguration();
         // Show success message
         alert("Marketing AIcon created successfully!");
       } else {
-        alert("Error creating Marketing AIcon: " + data.error);
+        throw new Error(data.error || "Failed to switch to marketing AIcon");
       }
     })
     .catch(error => {
       console.error("Error creating Marketing AIcon:", error);
-      alert("Error creating Marketing AIcon. See console for details.");
+      alert("Error creating Marketing AIcon: " + error.message);
     })
     .finally(() => {
-      // Restore original text
+      // Remove spinner
+      document.body.removeChild(spinner);
+      // Restore original text and enable button
       createMarketingBtn.textContent = originalText;
+      createMarketingBtn.disabled = false;
     });
   }
 
@@ -1361,22 +1414,31 @@
    * Handles AIcon selection change
    */
   function handleAiconChange() {
-    const newAicon = aiconSelect.value;
+    const selectedAicon = aiconSelect.value;
+    if (selectedAicon === currentAicon) return;
     
-    if (newAicon === currentAicon) return;
+    // Show loading state
+    const originalText = aiconSelect.options[aiconSelect.selectedIndex].text;
+    aiconSelect.disabled = true;
+    aiconSelect.options[aiconSelect.selectedIndex].text = "Switching...";
     
-    // Set the new AIcon as current
+    // Clear the chat messages container
+    messagesContainer.innerHTML = '';
+    
+    // Update current AIcon
+    currentAicon = selectedAicon;
+    
+    // Update server-side current AIcon
     fetch("/api/aicons/current", {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ name: newAicon })
+      body: JSON.stringify({ name: selectedAicon })
     })
     .then(response => response.json())
     .then(data => {
       if (data.success) {
-        currentAicon = newAicon;
         // Reload chat history for the new AIcon
         loadChatHistory();
         // Reload configuration
@@ -1387,6 +1449,11 @@
     })
     .catch(error => {
       console.error("Error switching AIcon:", error);
+    })
+    .finally(() => {
+      // Restore original text and enable select
+      aiconSelect.options[aiconSelect.selectedIndex].text = originalText;
+      aiconSelect.disabled = false;
     });
   }
 })(); 
