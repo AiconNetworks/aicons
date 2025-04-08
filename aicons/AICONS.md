@@ -47,6 +47,86 @@ num_competitors:
   Root factor (no dependencies)
 ```
 
+### Data Flows
+
+The AIcons framework maintains a clear separation between different data types and their transformations throughout the system:
+
+```mermaid
+graph TD
+    subgraph User Interface Layer
+        UI[User Input<br>Python Types<br>dicts, lists, floats]
+    end
+
+    subgraph Conversion Layer
+        C1[Convert to Tensors<br>tf.constant<br>Type Validation]
+    end
+
+    subgraph Computation Layer
+        C2[Tensor Operations<br>HMC Sampling<br>Utility Evaluation]
+    end
+
+    subgraph Output Layer
+        O1[Convert to Python<br>Format Display<br>Human Readable]
+    end
+
+    subgraph Storage Layer
+        S1[State Storage<br>Distributions<br>Parameters]
+    end
+
+    UI -->|Python Types| C1
+    C1 -->|Tensors| C2
+    C2 -->|Tensors| O1
+    O1 -->|Python Types| S1
+    S1 -->|Python Types| UI
+
+    style UI fill:#f9f,stroke:#333,stroke-width:2px
+    style C1 fill:#bbf,stroke:#333,stroke-width:2px
+    style C2 fill:#bfb,stroke:#333,stroke-width:2px
+    style O1 fill:#fbb,stroke:#333,stroke-width:2px
+    style S1 fill:#ffb,stroke:#333,stroke-width:2px
+```
+
+1. **User Interface Layer**:
+
+   - Uses native Python types (dicts, lists, floats) for user interaction
+   - Example: `action = {"umbrella": 1.0}`
+   - Example: `state = {"market_size": 10000.0, "competition_level": "medium"}`
+
+2. **Conversion Layer**:
+
+   - Converts user inputs to tensors at system boundaries
+   - Handles type conversion and validation
+   - Example: `action_tensor = tf.constant([action.get(dim.name, 0.0) for dim in self.dimensions])`
+   - Example: `state_tensors = {k: tf.constant([v]) for k, v in state_sample.items()}`
+
+3. **Computation Layer**:
+
+   - Uses TensorFlow tensors for all internal computations
+   - Maintains consistent tensor types throughout processing
+   - Example: `utility_tensor = self.evaluate_tf(action_tensor, state_tensors)`
+   - Example: `posterior_samples = self.perception.sample_posterior(observations)`
+
+4. **Output Layer**:
+
+   - Converts tensors back to Python types for display and storage
+   - Formats data for user consumption
+   - Example: `beliefs[name] = {'value': float(factor.value), 'uncertainty': float(factor.uncertainty)}`
+   - Example: `print(f"Mean: {np.mean(samples):.4f}, Std: {np.std(samples):.4f}")`
+
+5. **Storage Layer**:
+   - Maintains state in native Python types
+   - Stores distributions and parameters
+   - Example: `state.factors[factor_name] = {'value': value, 'uncertainty': uncertainty}`
+   - Example: `posterior_samples = {'market_size': [10000.0, 10500.0, ...], 'conversion_rate': [0.02, 0.021, ...]}`
+
+This layered approach ensures:
+
+- Clear separation between user interface and computation
+- Consistent use of tensors for numerical operations
+- Efficient data processing through tensor operations
+- Human-readable output and storage
+- Type safety and validation at boundaries
+
 ### Tools
 
 A tool in the AIcons framework is an external piece of software that helps the AIcon to change the environment somewhere else. Tools are specific implementations that interact with external services or systems. They are the concrete actions that an AIcon can take to affect change in the world.

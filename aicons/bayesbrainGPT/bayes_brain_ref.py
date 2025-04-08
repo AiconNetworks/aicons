@@ -135,15 +135,17 @@ class BayesBrain:
         # Print sample statistics
         print("\nPosterior Sample Statistics:")
         for name, samples in posterior_samples.items():
+            print(f"\nDebug - {name}:")
+            print(f"Type: {type(samples)}")
+            print(f"Value: {samples}")
             if isinstance(samples, np.ndarray):
-                print(f"- {name}:")
                 print(f"  Shape: {samples.shape}")
                 print(f"  Mean: {np.mean(samples):.3f}")
                 print(f"  Std: {np.std(samples):.3f}")
                 print(f"  Min: {np.min(samples):.3f}")
                 print(f"  Max: {np.max(samples):.3f}")
             else:
-                print(f"- {name}: {samples}")
+                print(f"  Scalar value: {samples}")
         
         # Convert posterior samples to tensors with proper shape
         posterior_tensors = {}
@@ -152,9 +154,17 @@ class BayesBrain:
                 # Ensure samples are float32 and have the correct shape
                 posterior_tensors[name] = tf.constant(samples, dtype=tf.float32)
             else:
-                # For scalar values, create a tensor with the same shape as other samples
-                sample_shape = next(iter(posterior_tensors.values())).shape if posterior_tensors else (1,)
-                posterior_tensors[name] = tf.fill(sample_shape, float(samples))
+                # For non-array values, try to convert to numpy array first
+                try:
+                    samples_array = np.array(samples)
+                    if samples_array.ndim == 0:  # Scalar
+                        samples_array = np.array([samples_array])
+                    posterior_tensors[name] = tf.constant(samples_array, dtype=tf.float32)
+                except Exception as e:
+                    print(f"Warning: Could not convert {name} to tensor: {e}")
+                    # Fallback to scalar value
+                    sample_shape = next(iter(posterior_tensors.values())).shape if posterior_tensors else (1,)
+                    posterior_tensors[name] = tf.fill(sample_shape, float(samples))
         
         # Get all possible actions from action space dimensions
         possible_actions = self.action_space.enumerate_actions()
