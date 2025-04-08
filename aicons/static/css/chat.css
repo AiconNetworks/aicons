@@ -958,4 +958,30 @@ header > div:first-child::before {
     padding: 0 1rem;
     overflow: hidden;
     border-top: none;
+}
+
+/* AIcon Selector Styles */
+.aicon-selector {
+    margin-right: 10px;
+}
+
+.aicon-selector select {
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background-color: white;
+    font-size: 14px;
+    color: #333;
+    cursor: pointer;
+    transition: border-color 0.3s ease;
+}
+
+.aicon-selector select:hover {
+    border-color: #999;
+}
+
+.aicon-selector select:focus {
+    outline: none;
+    border-color: #4a69bd;
+    box-shadow: 0 0 0 2px rgba(74, 105, 189, 0.2);
 } 

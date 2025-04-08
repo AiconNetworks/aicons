@@ -50,6 +50,10 @@
   let isProcessing = false;
   let lastTokenUsage = null;
 
+  // Add these variables at the top with other state variables
+  let currentAicon = "default";
+  let aiconSelect;
+
   /**
    * Initialize the app when DOM is loaded
    */
@@ -87,6 +91,9 @@
     spaceTypeSelect = id("space-type");
     utilityTypeSelect = id("utility-type");
     sensorTypeSelect = id("sensor-type");
+    
+    // Get AIcon selector
+    aiconSelect = id("aicon-select");
     
     // Set up event listeners
     sendButton.addEventListener("click", handleSendMessage);
@@ -145,6 +152,12 @@
     
     // Load initial configuration
     loadConfiguration();
+    
+    // Load AIcons
+    loadAicons();
+    
+    // Add event listener for AIcon selection
+    aiconSelect.addEventListener("change", handleAiconChange);
   }
 
   /**
@@ -375,7 +388,8 @@
       },
       body: JSON.stringify({ 
         message: message, 
-        show_thinking: true 
+        show_thinking: true,
+        aicon: currentAicon
       })
     })
     .then(response => {
@@ -1274,6 +1288,63 @@
     .catch(error => {
       console.error("Error defining utility function:", error);
       alert("Error defining utility function. See console for details.");
+    });
+  }
+
+  /**
+   * Loads AIcons from the server
+   */
+  function loadAicons() {
+    fetch("/api/aicons")
+      .then(response => response.json())
+      .then(data => {
+        // Update the select dropdown
+        aiconSelect.innerHTML = '';
+        data.aicons.forEach(aicon => {
+          const option = document.createElement('option');
+          option.value = aicon;
+          option.textContent = aicon;
+          if (aicon === data.current) {
+            option.selected = true;
+            currentAicon = aicon;
+          }
+          aiconSelect.appendChild(option);
+        });
+      })
+      .catch(error => {
+        console.error("Error loading AIcons:", error);
+      });
+  }
+
+  /**
+   * Handles AIcon selection change
+   */
+  function handleAiconChange() {
+    const newAicon = aiconSelect.value;
+    if (newAicon === currentAicon) return;
+    
+    // Set the new AIcon as current
+    fetch("/api/aicons/current", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ name: newAicon })
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        currentAicon = newAicon;
+        // Reload chat history for the new AIcon
+        loadChatHistory();
+        // Reload configuration
+        loadConfiguration();
+      } else {
+        console.error("Error switching AIcon:", data.error);
+      }
+    })
+    .catch(error => {
+      console.error("Error switching AIcon:", error);
     });
   }
 })(); 

@@ -36,16 +36,103 @@ app = Flask(__name__,
             static_folder=static_folder,
             template_folder=template_folder)
 
-# Create ZeroAIcon
-aicon = ZeroAIcon(name="chat_aicon", description="Chat AIcon", model_name="deepseek-r1:7b")
+# Store AIcon instances and their chat histories
+aicons = {
+    "default": {
+        "instance": ZeroAIcon(name="default", description="Default AIcon", model_name="deepseek-r1:7b"),
+        "chat_history": []
+    }
+}
 
-# Store chat history
-chat_history = []
+# Current active AIcon - declare as global at the top level
+current_aicon = "default"
 
 @app.route('/')
 def index():
     """Render the chat interface."""
     return render_template('chat.html')
+
+@app.route('/api/aicons', methods=['GET'])
+def get_aicons():
+    """Get list of available AIcons."""
+    return jsonify({
+        "aicons": list(aicons.keys()),
+        "current": current_aicon
+    })
+
+@app.route('/api/aicons', methods=['POST'])
+def create_aicon():
+    """Create a new AIcon instance."""
+    try:
+        data = request.json
+        name = data.get('name')
+        description = data.get('description', '')
+        model_name = data.get('model_name', 'deepseek-r1:7b')
+        
+        if not name:
+            return jsonify({'error': 'Name is required'}), 400
+            
+        if name in aicons:
+            return jsonify({'error': 'AIcon with this name already exists'}), 400
+            
+        aicons[name] = {
+            "instance": ZeroAIcon(name=name, description=description, model_name=model_name),
+            "chat_history": []
+        }
+        
+        return jsonify({'success': True, 'name': name})
+        
+    except Exception as e:
+        logger.error(f"Error creating AIcon: {str(e)}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/aicons/<name>', methods=['DELETE'])
+def delete_aicon(name):
+    """Delete an AIcon instance."""
+    try:
+        if name not in aicons:
+            return jsonify({'error': 'AIcon not found'}), 404
+            
+        if name == "default":
+            return jsonify({'error': 'Cannot delete default AIcon'}), 400
+            
+        del aicons[name]
+        
+        # If we deleted the current AIcon, switch to default
+        if name == current_aicon:
+            current_aicon = "default"
+            
+        return jsonify({'success': True})
+        
+    except Exception as e:
+        logger.error(f"Error deleting AIcon: {str(e)}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/aicons/current', methods=['GET'])
+def get_current_aicon():
+    """Get the current active AIcon."""
+    return jsonify({'current': current_aicon})
+
+@app.route('/api/aicons/current', methods=['POST'])
+def set_current_aicon():
+    """Set the current active AIcon."""
+    try:
+        data = request.json
+        name = data.get('name')
+        
+        if not name:
+            return jsonify({'error': 'Name is required'}), 400
+            
+        if name not in aicons:
+            return jsonify({'error': 'AIcon not found'}), 404
+            
+        current_aicon = name
+        
+        return jsonify({'success': True, 'current': current_aicon})
+        
+    except Exception as e:
+        logger.error(f"Error setting current AIcon: {str(e)}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/chat', methods=['POST'])
 def chat():
@@ -58,19 +145,19 @@ def chat():
             return jsonify({'error': 'Message is required'}), 400
         
         # Add message to chat history
-        chat_history.append({'role': 'user', 'content': message})
+        aicons[current_aicon]["chat_history"].append({'role': 'user', 'content': message})
         
         # Get response from ZeroAIcon
         # We need to run the async function in the current event loop
         loop = asyncio.get_event_loop()
-        response = loop.run_until_complete(aicon.make_inference(message))
+        response = loop.run_until_complete(aicons[current_aicon]["instance"].make_inference(message))
         
         # Add response to chat history
-        chat_history.append({'role': 'assistant', 'content': response})
+        aicons[current_aicon]["chat_history"].append({'role': 'assistant', 'content': response})
         
         return jsonify({
             'response': response,
-            'history': chat_history
+            'history': aicons[current_aicon]["chat_history"]
         })
     
     except Exception as e:
@@ -89,7 +176,7 @@ def stream_chat():
             return jsonify({'error': 'Message is required'}), 400
         
         # Add message to chat history
-        chat_history.append({'role': 'user', 'content': message})
+        aicons[current_aicon]["chat_history"].append({'role': 'user', 'content': message})
         
         def generate():
             # We need to run the async function in the current event loop
@@ -103,11 +190,11 @@ def stream_chat():
                     accumulated_chunk = ""
                     
                     # Get the context window
-                    state_repr = aicon.get_state_representation()
+                    state_repr = aicons[current_aicon]["instance"].get_state_representation()
                     context = {
                         "state": state_repr,
-                        "utility_function": str(aicon.brain.utility_function) if aicon.brain.utility_function else None,
-                        "action_space": str(aicon.brain.action_space),
+                        "utility_function": str(aicons[current_aicon]["instance"].brain.utility_function) if aicons[current_aicon]["instance"].brain.utility_function else None,
+                        "action_space": str(aicons[current_aicon]["instance"].brain.action_space),
                         "prompt": message
                     }
                     context_str = json.dumps(context)
@@ -117,7 +204,7 @@ def stream_chat():
                     yield f"data: {json.dumps({'chunk': '✓ Starting inference...', 'done': False})}\n\n"
                     
                     # Stream directly from the LLM
-                    async for chunk in aicon.llm.generate(context_str):
+                    async for chunk in aicons[current_aicon]["instance"].llm.generate(context_str):
                         full_response += chunk
                         accumulated_chunk += chunk
                         
@@ -170,7 +257,7 @@ def stream_chat():
                             logger.info("Preserving thinking process in response with separators")
                     
                     # Add final response to chat history
-                    chat_history.append({'role': 'assistant', 'content': processed_response.strip()})
+                    aicons[current_aicon]["chat_history"].append({'role': 'assistant', 'content': processed_response.strip()})
                     
                     # Send completion message
                     yield f"data: {json.dumps({'chunk': '', 'done': True, 'full_response': processed_response.strip()})}\n\n"
@@ -199,13 +286,13 @@ def stream_chat():
 @app.route('/api/history', methods=['GET'])
 def get_history():
     """Get chat history."""
-    return jsonify({'history': chat_history})
+    return jsonify({'history': aicons[current_aicon]["chat_history"]})
 
 @app.route('/api/clear', methods=['POST'])
 def clear_history():
     """Clear chat history."""
-    global chat_history
-    chat_history = []
+    global aicons
+    aicons[current_aicon]["chat_history"] = []
     return jsonify({'status': 'success'})
 
 @app.route('/api/token-usage', methods=['GET'])
@@ -213,7 +300,7 @@ def get_token_usage():
     """Get token usage from ZeroAIcon."""
     try:
         # Get token usage report with updated data
-        usage_report = aicon.get_token_usage_report()
+        usage_report = aicons[current_aicon]["instance"].get_token_usage_report()
         
         # For debugging
         logger.info(f"Token usage report: total_used={usage_report['total_used']}, remaining={usage_report['remaining']}")
@@ -231,8 +318,8 @@ def get_configuration():
     try:
         # Get sensors
         sensors = []
-        if hasattr(aicon.brain, 'sensors'):
-            for name, sensor in aicon.brain.sensors.items():
+        if hasattr(aicons[current_aicon]["instance"].brain, 'sensors'):
+            for name, sensor in aicons[current_aicon]["instance"].brain.sensors.items():
                 sensors.append({
                     'name': name,
                     'sensor_type': sensor.__class__.__name__,
@@ -241,8 +328,8 @@ def get_configuration():
         
         # Get state factors with ALL properties
         state_factors = []
-        if hasattr(aicon.brain, 'state') and hasattr(aicon.brain.state, 'get_state_factors'):
-            factors = aicon.brain.state.get_state_factors()
+        if hasattr(aicons[current_aicon]["instance"].brain, 'state') and hasattr(aicons[current_aicon]["instance"].brain.state, 'get_state_factors'):
+            factors = aicons[current_aicon]["instance"].brain.state.get_state_factors()
             for name, factor in factors.items():
                 # Get factor type
                 factor_type = factor.__class__.__name__.replace('LatentVariable', '').lower()
@@ -280,19 +367,19 @@ def get_configuration():
         
         # Get action space
         action_space = None
-        if aicon.brain.action_space:
+        if aicons[current_aicon]["instance"].brain.action_space:
             action_space = {
                 'space_type': 'custom',  # Default
-                'dimensions': len(aicon.brain.action_space.dimensions) if hasattr(aicon.brain.action_space, 'dimensions') else 0,
-                'description': str(aicon.brain.action_space)
+                'dimensions': len(aicons[current_aicon]["instance"].brain.action_space.dimensions) if hasattr(aicons[current_aicon]["instance"].brain.action_space, 'dimensions') else 0,
+                'description': str(aicons[current_aicon]["instance"].brain.action_space)
             }
         
         # Get utility function
         utility_function = None
-        if aicon.brain.utility_function:
+        if aicons[current_aicon]["instance"].brain.utility_function:
             utility_function = {
                 'utility_type': 'custom',  # Default
-                'description': str(aicon.brain.utility_function)
+                'description': str(aicons[current_aicon]["instance"].brain.utility_function)
             }
         
         return jsonify({
@@ -347,7 +434,7 @@ def add_sensor():
             )
             
             # Add the sensor to AIcon
-            aicon.add_sensor(name, sensor)
+            aicons[current_aicon]["instance"].add_sensor(name, sensor)
             
             return jsonify({'success': True})
         
@@ -381,7 +468,7 @@ def add_state_factor():
         
         # Add the state factor
         try:
-            factor = aicon.add_state_factor(
+            factor = aicons[current_aicon]["instance"].add_state_factor(
                 name=name,
                 factor_type=factor_type,
                 value=value,
@@ -436,13 +523,13 @@ def delete_state_factor():
         logger.info(f"Deleting state factor: {name}")
         
         # Check if the factor exists
-        if not hasattr(aicon.brain, 'state') or not hasattr(aicon.brain.state, 'get_state_factors'):
+        if not hasattr(aicons[current_aicon]["instance"].brain, 'state') or not hasattr(aicons[current_aicon]["instance"].brain.state, 'get_state_factors'):
             return jsonify({
                 'success': False, 
                 'error': 'State representation system not initialized'
             }), 500
             
-        factors = aicon.brain.state.get_state_factors()
+        factors = aicons[current_aicon]["instance"].brain.state.get_state_factors()
         if name not in factors:
             return jsonify({
                 'success': False, 
@@ -488,11 +575,11 @@ def delete_state_factor():
                     current_factors.append(factor_data)
             
             # Reset the state factors
-            aicon.brain.state.reset()
+            aicons[current_aicon]["instance"].brain.state.reset()
             
             # Recreate all factors except the deleted one
             for factor_data in current_factors:
-                aicon.add_state_factor(
+                aicons[current_aicon]["instance"].add_state_factor(
                     name=factor_data['name'],
                     factor_type=factor_data['factor_type'],
                     value=factor_data['value'],
@@ -535,7 +622,7 @@ def define_action_space():
                 return jsonify({'success': False, 'error': 'Items list is required'}), 400
             
             # Define the action space
-            action_space = aicon.define_action_space(
+            action_space = aicons[current_aicon]["instance"].define_action_space(
                 space_type="budget_allocation",
                 total_budget=total_budget,
                 items=items,
@@ -563,7 +650,7 @@ def define_utility_function():
             return jsonify({'success': False, 'error': 'Utility type is required'}), 400
         
         # Ensure we have an action space first
-        if not aicon.brain.action_space:
+        if not aicons[current_aicon]["instance"].brain.action_space:
             return jsonify({
                 'success': False, 
                 'error': 'Action space must be defined before defining a utility function'
@@ -580,7 +667,7 @@ def define_utility_function():
                 return jsonify({'success': False, 'error': 'Ad names list is required'}), 400
             
             # Define the utility function
-            utility = aicon.define_utility_function(
+            utility = aicons[current_aicon]["instance"].define_utility_function(
                 utility_type="marketing_roi",
                 revenue_per_sale=revenue_per_sale,
                 num_days=num_days,
