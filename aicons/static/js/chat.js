@@ -683,67 +683,6 @@
     tabPanes.forEach(pane => {
       if (pane.id === tabName + "-tab") {
         pane.style.display = "block";
-        
-        // If this is the factors tab, initialize the graph immediately
-        if (tabName === "factors") {
-          console.log("Factors tab activated - forcing initialization");
-          
-          // Force graph container to be visible with size
-          const graphContainer = document.getElementById('factor-graph-container');
-          if (graphContainer) {
-            graphContainer.style.display = 'block';
-            graphContainer.style.height = '400px';
-          }
-          
-          // Force immediate initialization
-          if (window.FactorGraph) {
-            // Create instance directly if needed
-            try {
-              // If this is a new instance
-              if (!window.factorGraphInstance) {
-                console.log("Creating new factor graph instance directly");
-                window.factorGraphInstance = new window.FactorGraph('factor-graph-container');
-                
-                // Add factor button directly to ensure it's visible
-                const addButton = document.createElement('button');
-                addButton.textContent = 'Add Factor';
-                addButton.style.position = 'absolute';
-                addButton.style.top = '10px';
-                addButton.style.right = '10px';
-                addButton.style.zIndex = '1000';
-                addButton.style.padding = '8px 16px';
-                addButton.style.backgroundColor = '#3b82f6';
-                addButton.style.color = '#ffffff';
-                addButton.style.border = 'none';
-                addButton.style.borderRadius = '4px';
-                addButton.style.fontWeight = 'bold';
-                addButton.style.cursor = 'pointer';
-                
-                addButton.addEventListener('click', function() {
-                  if (window.factorGraphInstance) {
-                    window.factorGraphInstance.quickAddFactor();
-                  }
-                });
-                
-                if (graphContainer) {
-                  graphContainer.appendChild(addButton);
-                }
-              }
-              
-              // Trigger a resize to make it visible
-              if (window.factorGraphInstance) {
-                window.factorGraphInstance.resize();
-              }
-            } catch (e) {
-              console.error("Error creating factor graph:", e);
-            }
-          }
-          
-          // Also call the external init function if available
-          if (typeof window.initFactorEditor === 'function') {
-            window.initFactorEditor();
-          }
-        }
       } else {
         pane.style.display = "none";
       }

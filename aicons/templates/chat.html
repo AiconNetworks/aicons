@@ -170,15 +170,11 @@
                         
                         <!-- State Factors Tab -->
                         <div id="factors-tab" class="tab-pane">
-                            <div class="factor-graph-help">
-                                <strong>Click "Add Factor"</strong> to instantly create new nodes. <strong>Drag and drop</strong> to connect and arrange them.
-                                All changes stay local until you click <strong>Save All Factors to Server</strong>. Hierarchical relationships are automatically 
-                                inferred from node connections.
+                            <div class="factor-form-help">
+                                <strong>Use the form below</strong> to add new state factors. All changes are saved directly to the server.
                             </div>
                             
-                            <div id="factor-graph-container" class="factor-graph-container"></div>
-                            
-                            <!-- The editor panel will be inserted here by JavaScript -->
+                            <!-- The factor form will be inserted here by JavaScript -->
                             
                             <!-- Hidden div for compatibility with chat.js -->
                             <div id="current-factors" style="display: none;"></div>
@@ -302,9 +298,6 @@
     </div>
     
     <script src="{{ url_for('static', filename='js/chat.js') }}"></script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/factor_graph.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/notifications.css') }}">
-    <script src="{{ url_for('static', filename='js/modules/factor_graph.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/factor_editor.js') }}"></script>
 </body>
 </html> 
