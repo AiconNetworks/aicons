@@ -85,6 +85,10 @@ class ZeroAIcon:
         # Setup logging
         logger.info(f"Initialized {self.name} with {model_name}")
         logger.info(f"Context window: {self.llm.context_window:,} tokens")
+        
+        # Initialize action tracking
+        self._current_action = None
+        self._action_history = []
     
     def _count_tokens(self, text: str) -> int:
         """Count tokens in text using LLM's token counter."""
@@ -285,6 +289,11 @@ class ZeroAIcon:
                 best_action = action
         
         print("\n")  # New line after progress
+        
+        # Set the current action when we find the best one
+        if best_action is not None:
+            self.set_current_action(best_action)
+            
         return best_action, best_utility
     
     def get_state(self) -> Dict[str, Any]:
@@ -656,6 +665,9 @@ class ZeroAIcon:
         utility_tokens = count_and_compare(utility_str, "Utility Function")
         inference_tokens = count_and_compare(inference_str, "Inference")
         
+        # Get current action
+        current_action = self.get_current_action()
+        
         return {
             "state_representation": {
                 "tokens": state_repr_tokens,
@@ -673,6 +685,26 @@ class ZeroAIcon:
                 "tokens": inference_tokens,
                 "content": inference_str
             },
+            "current_action": {
+                "action": current_action,
+                "timestamp": datetime.now().isoformat() if current_action else None
+            },
             "total_used": state_repr_tokens + action_space_tokens + utility_tokens + inference_tokens,
             "remaining": self.llm.context_window - (state_repr_tokens + action_space_tokens + utility_tokens + inference_tokens)
-        } 
+        }
+
+    def get_current_action(self):
+        """Get the current action being taken."""
+        return self._current_action
+
+    def set_current_action(self, action):
+        """Set the current action and add to history."""
+        self._current_action = action
+        self._action_history.append({
+            'action': action,
+            'timestamp': datetime.now().isoformat()
+        })
+
+    def get_action_history(self):
+        """Get the history of actions taken."""
+        return self._action_history 
