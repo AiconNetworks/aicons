@@ -2,6 +2,33 @@
 
 A Bayesian decision-making system for optimizing budget allocation across marketing campaigns.
 
+## Security and Environment Variables
+
+This project uses environment variables to store sensitive information like API keys. Never commit these values to version control.
+
+1. Create a `.env` file in the project root with the following structure:
+
+```bash
+# API Keys
+GEMINI_API_KEY=your_gemini_api_key_here
+META_ACCESS_TOKEN=your_meta_access_token_here
+```
+
+2. Add `.env` to your `.gitignore` file (already included in this project)
+
+3. Use environment variables in your code:
+
+```python
+import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# Access variables
+access_token = os.getenv('META_ACCESS_TOKEN')
+```
+
 ## Installation
 
 ```bash
@@ -23,6 +50,11 @@ Here's a minimal example to optimize budget allocation for Meta Ads:
 ```python
 from aicons.definitions.simple_bad_aicon import SimpleBadAIcon
 from aicons.bayesbrainGPT.sensors.meta_ads_sensor import MetaAdsSensor
+import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Create AIcon
 aicon = SimpleBadAIcon(name="BudgetOptimizer")
@@ -30,7 +62,7 @@ aicon = SimpleBadAIcon(name="BudgetOptimizer")
 # Configure Meta Ads sensor
 sensor = MetaAdsSensor(
     name="meta_ads",
-    access_token="your_access_token",
+    access_token=os.getenv('META_ACCESS_TOKEN'),  # Get from environment variables
     ad_account_id="act_your_account_id",
     campaign_id="your_campaign_id"
 )

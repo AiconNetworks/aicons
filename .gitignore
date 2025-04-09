@@ -36,3 +36,5 @@ dist/
 
 # Specific to bayesbrainGPT
 bayesbrainGPT/**/__pycache__/
+
+notebooks/hello_zero.ipynb

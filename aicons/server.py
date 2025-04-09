@@ -711,78 +711,28 @@ def define_utility_function():
 
 @app.route('/api/aicons/marketing', methods=['POST'])
 def create_marketing_aicon():
-    """Create a new marketing-focused AIcon with predefined configuration."""
+    """Create a marketing-specific AIcon instance."""
     try:
-        # Create the marketing AIcon
-        name = "marketing_aicon"
-        if name in aicons:
-            return jsonify({'error': 'Marketing AIcon already exists'}), 400
+        # Get access token from environment variables
+        access_token = os.getenv('META_ACCESS_TOKEN')
+        if not access_token:
+            return jsonify({'error': 'META_ACCESS_TOKEN environment variable not set'}), 500
             
         # Create the AIcon instance
-        marketing_aicon = ZeroAIcon(
-            name=name,
-            description="Marketing-focused AIcon for ad optimization",
-            model_name="deepseek-r1:7b"
-        )
+        aicon = ZeroAIcon(name="marketing", description="Marketing AIcon", model_name="deepseek-r1:7b")
         
-        # Add tools to the marketing AIcon
+        # Add tools to the AIcon
         speak_tool = SpeakOutLoudTool()
         ask_tool = AskQuestionTool()
-        marketing_aicon.add_tool(speak_tool)
-        marketing_aicon.add_tool(ask_tool)
-        
-        # Add Meta Ads sensor
-        from aicons.bayesbrainGPT.sensors.meta_s.meta_ads_sales_sensor import MetaAdsSalesSensor
-        
-        # Hardcoded Meta Ads credentials
-        access_token = "EAAZAn8wmq1IEBOZCz8oyDZBBgiazAgnQKIoAr4mFTbkV7jxi6t3APzOSxFybXNIkBgwQACdagbs5lFE8tpnNOBOOpWtS3KjZAdf9MNAlySpwEaDrX32oQwUTNmOZAaSXjT5Os5Q8YqRo57tXOUukB7QtcO8nQ8JuqrnnshCr7A0giynZBnJKfuPakrZBWoZD"
-        ad_account_id = "act_252267674525035"
-        campaign_id = "120218631288730217"
-        
-        sensor = MetaAdsSalesSensor(
-            name="meta_ads",
-            reliability=0.9,
-            access_token=access_token,
-            ad_account_id=ad_account_id,
-            campaign_id=campaign_id,
-            api_version="v18.0",
-            time_granularity="hour"
-        )
-        
-        marketing_aicon.add_sensor("meta_ads", sensor)
-        
-        # Get active ads and their IDs
-        active_ads = sensor.get_active_ads()
-        ad_ids = [ad['ad_id'] for ad in active_ads]
-        
-        # Define action space
-        marketing_aicon.define_action_space(
-            space_type="budget_allocation",
-            total_budget=1000.0,
-            items=ad_ids,
-            budget_step=100.0,
-            min_budget=0.0
-        )
-        
-        # Define utility function
-        marketing_aicon.define_utility_function(
-            utility_type="marketing_roi",
-            revenue_per_sale=50.0,
-            num_days=1,
-            ad_names=ad_ids
-        )
-        
-        # Store the AIcon
-        aicons[name] = {
-            "instance": marketing_aicon,
+        aicon.add_tool(speak_tool)
+        aicon.add_tool(ask_tool)
+            
+        aicons["marketing"] = {
+            "instance": aicon,
             "chat_history": []
         }
         
-        # Set as current AIcon
-        global current_aicon
-        current_aicon = name
-        
-        return jsonify({'success': True, 'name': name})
+        return jsonify({'success': True, 'name': "marketing"})
         
     except Exception as e:
         logger.error(f"Error creating marketing AIcon: {str(e)}", exc_info=True)
