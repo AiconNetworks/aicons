@@ -1,9 +1,12 @@
 [tool.poetry]
-name = "babel"
+name = "aicons"
 version = "0.1.0"
-description = ""
-authors = ["Roberto Infante <roberto.infante03@gmail.com>"]
+description = "AI-powered decision making tools for humanity by Aicons4Humanity"
+authors = ["Aicons4Humanity <roberto.infante03@gmail.com>"]
 readme = "README.md"
+license = "MIT"
+repository = "https://github.com/Aicons4Humanity/aicons"
+documentation = "https://aicons4humanity.github.io/aicons/"
 
 [tool.poetry.dependencies]
 python = ">=3.12,<3.14"
@@ -24,7 +27,7 @@ nest-asyncio = "^1.6.0"
 flask-cors = "^5.0.1"
 
 [tool.poetry.scripts]
-zero-chat = "aicons.cli:main"
+aicons-chat = "aicons.cli:main"
 
 [build-system]
 requires = ["poetry-core"]

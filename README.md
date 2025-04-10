@@ -1,6 +1,22 @@
-# BayesBrain Budget Allocation AIcon
+# Aicons
 
-A Bayesian decision-making system for optimizing budget allocation across marketing campaigns.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Documentation Status](https://readthedocs.org/projects/aicons/badge/?version=latest)](https://aicons4humanity.github.io/aicons/)
+
+AI-powered decision making tools for humanity by Aicons4Humanity.
+
+## Our Mission
+
+To improve smarter decision making for humanity through AI-powered tools and Bayesian optimization.
+
+## Features
+
+- Bayesian optimization for marketing budgets
+- Integration with Meta Ads API
+- Real-time decision making
+- Custom utility functions
+- Action space definition
+- AI-powered chat interface
 
 ## Security and Environment Variables
 
@@ -33,8 +49,8 @@ access_token = os.getenv('META_ACCESS_TOKEN')
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/Babel.git
-cd Babel
+git clone https://github.com/Aicons4Humanity/aicons.git
+cd aicons
 
 # Install dependencies
 pip install -r requirements.txt
@@ -104,6 +120,23 @@ for ad_id, budget in best_action.items():
     print(f"- {ad_name}: ${budget:.2f}")
 print(f"\nExpected profit: ${expected_profit:.2f}")
 ```
+
+## Documentation
+
+For detailed documentation, please visit [https://aicons4humanity.github.io/aicons/](https://aicons4humanity.github.io/aicons/)
+
+## Contributing
+
+We welcome contributions from the community! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Contact
+
+- Organization: [Aicons4Humanity](https://github.com/Aicons4Humanity)
+- Email: roberto.infante03@gmail.com
 
 ## Detailed Usage Guide
 
