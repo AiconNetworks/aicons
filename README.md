@@ -1,361 +1,147 @@
-# Aicons
+---
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Documentation Status](https://readthedocs.org/projects/aicons/badge/?version=latest)](https://aicons4humanity.github.io/aicons/)
+````markdown
+# 🧠 BayesBrain: A Bayesian Cognitive Framework for Agent Design
 
-AI-powered decision making tools for humanity by Aicons4Humanity.
+BayesBrain is a biologically inspired, probabilistic agent framework unifying Large Language Models (LLMs) with the Bayesian Brain hypothesis. It allows agents to **perceive**, **reason**, and **act** under uncertainty — using **LLMs as experiential priors**, and **Bayesian inference** for state estimation and decision-making.
 
-## Our Mission
+> This is the foundation for the upcoming **Agent Development Kit (ADK)** — a modular framework for building intelligent agents that think, plan, and adapt like brains.
 
-To improve smarter decision making for humanity through AI-powered tools and Bayesian optimization.
+---
 
-## Features
+## 🧭 Core Concepts
 
-- Bayesian optimization for marketing budgets
-- Integration with Meta Ads API
-- Real-time decision making
-- Custom utility functions
-- Action space definition
-- AI-powered chat interface
+BayesBrain is built on the following principles:
 
-## Security and Environment Variables
+- **Bayesian Brain Hypothesis**: The brain is a probabilistic machine. It updates beliefs using Bayes’ rule, minimizes prediction error, and models the world hierarchically.
+- **LLMs as Prior Memory**: Language models like GPT act as compressed experiential memory. They help agents form structured priors based on learned patterns.
+- **Sensor-Driven Perception**: The agent uses inputs (APIs, streams, user text) as _sensor data_ to infer the hidden state of the world.
+- **Utility-Based Planning**: Agents select actions that maximize expected utility, balancing uncertain outcomes and organizational constraints.
+- **Hierarchical Reasoning**: Both priors and decisions are modeled hierarchically, allowing agents to reason abstractly while grounding their actions in perception.
 
-This project uses environment variables to store sensitive information like API keys. Never commit these values to version control.
+---
 
-1. Create a `.env` file in the project root with the following structure:
+## 📦 What’s Inside
+
+### 🧠 `core/`
+
+The reasoning engine:
+
+- `perception.py`: Bayesian state inference (`posterior = prior × likelihood`)
+- `memory.py`: LLM-based prior generation & refinement
+- `planning.py`: Expected utility calculation
+- `action_space.py`: Defines feasible and constrained actions
+- `sensors.py`: Sensor interface, data normalization, uncertainty modeling
+
+### 🤖 `examples/`
+
+Working demos and use cases:
+
+- `ad_campaign.py`: Bayesian ad budget optimization using Meta API data
+- `trip_planner.py`: Weather-informed movement planning
+
+### 📚 `theory/`
+
+Documentation of key ideas and research foundations:
+
+- Predictive coding
+- Active inference
+- LLMs as probabilistic memory
+- Utility functions in decision theory
+
+---
+
+## 🔍 Quickstart
+
+> Want to test-drive the concept?
 
 ```bash
-# API Keys
-GEMINI_API_KEY=your_gemini_api_key_here
-META_ACCESS_TOKEN=your_meta_access_token_here
+git clone https://github.com/your-username/bayesbrain.git
 ```
 
-2. Add `.env` to your `.gitignore` file (already included in this project)
+````
 
-3. Use environment variables in your code:
+You’ll see:
 
-```python
-import os
-from dotenv import load_dotenv
+- Belief updates based on incoming "sensor" data (e.g. from an ad API)
+- Posterior sampling (via HMC or MC methods)
+- Expected utility computed across actions
+- The best action selected based on updated beliefs
 
-# Load environment variables
-load_dotenv()
+---
 
-# Access variables
-access_token = os.getenv('META_ACCESS_TOKEN')
+## 🚧 Roadmap
+
+We’re building toward the **Agent Development Kit (ADK)** — a complete toolkit for developers and researchers to build intelligent, adaptive agents.
+
+### ✅ Phase 1: Launch Research Repo (✔ this is it)
+
+- Share theory + early examples
+- Validate architecture in real-world use cases
+
+### 🔜 Phase 2: Demos + Modularization
+
+- More examples (marketing, robotics, finance)
+- Modular ADK API (`Agent()`, `Sensor()`, etc.)
+
+### 🔜 Phase 3: ADK Beta Launch
+
+- CLI tools for agent creation
+- Config-based agents
+- Plugin system for memory, perception, and planners
+
+Follow the project or join the [Discord]() to contribute or stay updated.
+
+---
+
+## 📖 References & Inspiration
+
+- **Bayesian Brain Hypothesis**
+  Friston, Karl. _"The free-energy principle: a unified brain theory?"_ (2009)
+  Clark, Andy. _"Surfing Uncertainty: Prediction, Action, and the Embodied Mind"_ (2016)
+
+- **System 1 / System 2 Thinking**
+  Kahneman, Daniel. _"Thinking, Fast and Slow"_ (2011)
+
+- **LLMs as Priors**
+  Internal hypothesis based on transformer memory, token prediction, and prior-likelihood alignment
+
+- **Active Inference for Agents**
+  _Active Inference for Multi-LLM Systems_ (2023)
+
+---
+
+## 🤝 Contributing
+
+We’re still early-stage — if you’re interested in:
+
+- Building new agent demos
+- Contributing models or sensors
+- Helping with docs, examples, or design
+
+...just open an issue or pull request. Contributions welcome 💡
+
+---
+
+## 📜 License
+
+MIT — free to use, modify, and distribute. Let’s build thinking agents together.
+
+---
+
+## ✨ Author
+
+**[Your Name]**
+[Twitter / GitHub / Site]
+
+“Because agents shouldn’t just react — they should reason.”
+
 ```
 
-## Installation
+---
 
-```bash
-# Clone the repository
-git clone https://github.com/Aicons4Humanity/aicons.git
-cd aicons
+Want me to make a matching `CONTRIBUTING.md` or format your theory notes into clean markdown files in the `theory/` folder?
 
-# Install dependencies
-pip install -r requirements.txt
-
-# Optional: Install TensorFlow with GPU support for faster gradient optimization
-pip install tensorflow-gpu
+Also: let me know your preferred name for the framework (`BayesBrain`, `BayesBrainGPT`, `Aicon`, `ADK`, etc.) so I can help you build the branding consistently across README, docs, and visuals.
 ```
-
-## Quick Start
-
-Here's a minimal example to optimize budget allocation for Meta Ads:
-
-```python
-from aicons.definitions.simple_bad_aicon import SimpleBadAIcon
-from aicons.bayesbrainGPT.sensors.meta_ads_sensor import MetaAdsSensor
-import os
-from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
-
-# Create AIcon
-aicon = SimpleBadAIcon(name="BudgetOptimizer")
-
-# Configure Meta Ads sensor
-sensor = MetaAdsSensor(
-    name="meta_ads",
-    access_token=os.getenv('META_ACCESS_TOKEN'),  # Get from environment variables
-    ad_account_id="act_your_account_id",
-    campaign_id="your_campaign_id"
-)
-
-# Add sensor to AIcon
-aicon.add_sensor("meta_ads", sensor)
-
-# Get active ads
-active_ads = sensor.get_active_ads()
-ad_ids = [ad['ad_id'] for ad in active_ads]
-
-# Create action space
-action_space = aicon.create_action_space(
-    space_type='budget_allocation',
-    total_budget=1000,  # $1000 total budget
-    items=ad_ids,
-    step_size=0.01  # 1% steps
-)
-
-# Create utility function
-utility_function = aicon.create_utility_function(
-    utility_type='marketing_roi',
-    revenue_per_sale=50.0  # $50 revenue per conversion
-)
-
-# Update beliefs with latest data
-aicon.update_from_sensor("meta_ads")
-
-# Find optimal budget allocation
-best_action, expected_profit = aicon.find_best_action(
-    num_samples=500,
-    use_gradient=True  # Enable gradient-based optimization
-)
-
-# Print results
-print("\nOPTIMAL BUDGET ALLOCATION:")
-for ad_id, budget in best_action.items():
-    ad_name = next((ad['ad_name'] for ad in active_ads if ad['ad_id'] == ad_id), ad_id)
-    print(f"- {ad_name}: ${budget:.2f}")
-print(f"\nExpected profit: ${expected_profit:.2f}")
-```
-
-## Documentation
-
-For detailed documentation, please visit [https://aicons4humanity.github.io/aicons/](https://aicons4humanity.github.io/aicons/)
-
-## Contributing
-
-We welcome contributions from the community! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Contact
-
-- Organization: [Aicons4Humanity](https://github.com/Aicons4Humanity)
-- Email: roberto.infante03@gmail.com
-
-## Detailed Usage Guide
-
-### 1. Create the AIcon
-
-Start by creating a SimpleBadAIcon instance:
-
-```python
-from aicons.definitions.simple_bad_aicon import SimpleBadAIcon
-aicon = SimpleBadAIcon(name="BudgetOptimizer")
-```
-
-### 2. Define Priors (Optional)
-
-You can explicitly define prior beliefs about ad performance:
-
-```python
-# Add priors for conversion rates and costs
-aicon.add_factor_continuous("conversion_rate_ad1", 0.05, 0.01, lower_bound=0.0)
-aicon.add_factor_continuous("cost_per_click_ad1", 0.5, 0.1, lower_bound=0.0)
-```
-
-### 3. Set Up Meta Ads Sensor
-
-Configure the Meta Ads sensor with your credentials:
-
-```python
-from aicons.bayesbrainGPT.sensors.meta_ads_sensor import MetaAdsSensor
-
-sensor = MetaAdsSensor(
-    name="meta_ads",
-    access_token="your_access_token",
-    ad_account_id="act_your_account_id",
-    campaign_id="your_campaign_id",
-    api_version="v18.0",
-    time_granularity="hour"  # Options: "hour", "day", "week"
-)
-
-aicon.add_sensor("meta_ads", sensor)
-```
-
-### 4. Create Action Space
-
-Define the budget allocation action space:
-
-```python
-# Get active ads
-active_ads = sensor.get_active_ads()
-ad_ids = [ad['ad_id'] for ad in active_ads]
-
-action_space = aicon.create_action_space(
-    space_type='budget_allocation',
-    total_budget=1000,  # Total budget to allocate
-    items=ad_ids,       # Which ads to allocate budget to
-    step_size=0.01,     # Step size (as percentage of total)
-    ignore_validation=True  # Optional: ignore validation checks
-)
-```
-
-### 5. Create Utility Function
-
-Define how you measure success:
-
-```python
-utility_function = aicon.create_utility_function(
-    utility_type='marketing_roi',
-    revenue_per_sale=50.0,  # Revenue per conversion
-    # Optional parameters:
-    # min_roi=2.0,         # Minimum ROI constraint
-    # brand_impact=0.2     # Weight for brand impact
-)
-```
-
-### 6. Update Beliefs
-
-Gather the latest data to update your beliefs:
-
-```python
-# Update with latest Meta Ads performance
-aicon.update_from_sensor("meta_ads")
-
-# Alternatively, provide custom data
-aicon.update_from_sensor("meta_ads", environment={
-    "ad1": {"clicks": 1000, "conversions": 50},
-    "ad2": {"clicks": 800, "conversions": 32},
-    "ad3": {"clicks": 1200, "conversions": 72}
-})
-```
-
-### 7. Find Optimal Allocation
-
-Use gradient-based optimization to find the best budget allocation:
-
-```python
-best_action, expected_profit = aicon.find_best_action(
-    num_samples=500,     # Number of samples to evaluate
-    use_gradient=True    # Use gradient-based optimization
-)
-
-# Print results
-print("\nOPTIMAL BUDGET ALLOCATION:")
-for ad_id, budget in best_action.items():
-    ad_name = next((ad['ad_name'] for ad in active_ads if ad['ad_id'] == ad_id), ad_id)
-    print(f"- {ad_name}: ${budget:.2f}")
-print(f"\nExpected profit: ${expected_profit:.2f}")
-```
-
-## Advanced Usage
-
-### Different Action Space Types
-
-The system supports various action space types:
-
-```python
-# Simple marketing space
-action_space = aicon.create_action_space(
-    space_type='marketing',
-    total_budget=1000,
-    num_ads=3,
-    budget_step=10
-)
-
-# Time-based budget allocation
-action_space = aicon.create_action_space(
-    space_type='time_budget',
-    total_budget=3000,
-    num_ads=3,
-    num_days=7,
-    budget_step=50
-)
-
-# Multi-campaign allocation
-action_space = aicon.create_action_space(
-    space_type='multi_campaign',
-    campaigns={
-        'campaign1': {'total_budget': 1000, 'ads': ['ad1', 'ad2'], 'days': 3},
-        'campaign2': {'total_budget': 2000, 'ads': ['ad3', 'ad4'], 'days': 5}
-    },
-    budget_step=50
-)
-```
-
-### Custom Utility Functions
-
-Create custom utility functions:
-
-```python
-utility_function = aicon.create_utility_function(
-    utility_type='custom_marketing',
-    revenue_function=lambda conversions: conversions * 50,
-    cost_function=lambda clicks, cpc: clicks * cpc,
-    constraint_function=lambda allocation: allocation['ad1'] >= 100  # Minimum spend on ad1
-)
-```
-
-### Continuous Updating
-
-Run the system continuously to adapt to changing conditions:
-
-```python
-# Run continuously, updating every hour
-aicon.run(
-    mode='continuous',
-    sensor_name="meta_ads",
-    interval=3600,  # Update every hour
-)
-
-# Run for a specific duration
-aicon.run(
-    mode='finite',
-    sensor_name="meta_ads",
-    interval=3600,
-    duration=86400  # Run for 24 hours
-)
-```
-
-## Understanding the Bayesian Framework
-
-This system uses a full Bayesian approach:
-
-1. **Priors**: Initial beliefs about conversion rates, costs, etc.
-2. **Likelihood**: Model of how data is generated given the true parameters
-3. **Posterior**: Updated beliefs after observing data
-4. **Expected Utility**: Integration over posterior to find optimal actions
-
-The gradient-based optimization ensures proper integration over the posterior distribution, accounting for uncertainty in ad performance parameters.
-
-## ZeroAIcon Chat Interface
-
-The project includes an interactive chat interface that allows you to converse with the ZeroAIcon's reasoning process.
-
-### Features
-
-- Real-time streaming of AI responses
-- Toggleable "Thinking Process" visualization
-- Interactive collapsible sections for AI reasoning
-- Clean web interface for easy interaction
-
-### Running the Chat Server
-
-To start the chat interface:
-
-```bash
-# Using Poetry (recommended)
-poetry run python run_chat.py --port 8000
-
-# Or with plain Python
-python run_chat.py --port 8000
-```
-
-Then open your browser to http://localhost:8000 to access the chat interface.
-
-### Chat Commands
-
-The chat interface responds to natural language queries and shows both the final answer and the AI's reasoning process.
-
-You can toggle the display of the thinking process in two ways:
-
-1. Use the "Show Thinking Process" toggle switch before sending a message
-2. Click the "Show Thinking Process" button that appears with any response that includes thinking steps
-
-This interactive thinking visualization helps understand how the AI approaches problems and makes its decisions.
+````
